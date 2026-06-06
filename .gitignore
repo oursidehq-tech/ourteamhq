@@ -3,3 +3,7 @@ node_modules/
 dist/
 .env
 .env.*
+android/.gradle/
+android/build/
+android/**/build/
+android/local.properties
