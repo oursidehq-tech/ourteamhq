@@ -1,0 +1,562 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ─── Helper Functions ───
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isClubMember(clubId) {
+      return isSignedIn() && (
+        exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid)) ||
+        isClubAdmin(clubId)
+      );
+    }
+
+    function isSuperAdmin() {
+      return isSignedIn() &&
+        (
+          request.auth.token.email in ['admin@gmail.com', 'ourteamhq@gmail.com'] ||
+          (
+            exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+            (
+              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.accountType == 'superadmin' ||
+              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.email in ['admin@gmail.com', 'ourteamhq@gmail.com']
+            )
+          )
+        );
+    }
+
+    function isPublicVisibility(value) {
+      return value in ['public', 'Public', 'network', 'Network'];
+    }
+
+    function isPaidOrderStatus(value) {
+      return value in ['paid', 'Paid', 'succeeded', 'Succeeded'];
+    }
+
+    function memberDoc(clubId) {
+      return exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid)) 
+        ? get(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid)) 
+        : null;
+    }
+
+    function clubRole(clubId) {
+      let doc = memberDoc(clubId);
+      return doc != null ? doc.data.get('role', '') : '';
+    }
+
+    function isPlayerRole(clubId) {
+      let role = clubRole(clubId);
+      return role == 'Player' || role == 'player';
+    }
+
+    function canManageCommunication(clubId) {
+      return isClubMember(clubId) && !isPlayerRole(clubId);
+    }
+
+    function roleGroupIds(clubId) {
+      let role = clubRole(clubId);
+      return (
+        (role == 'Owner' || role == 'owner' || role == 'Admin' || role == 'admin' || role == 'President' || role == 'president' || role == 'Vice President' || role == 'vice president' || role == 'Executive' || role == 'executive')
+          ? ['executive', 'group:executive']
+          : []
+      )
+      .concat(
+        (role == 'Committee' || role == 'committee' || role == 'Treasurer' || role == 'treasurer' || role == 'Secretary' || role == 'secretary' || role == 'Registrar' || role == 'registrar' || role == 'Coordinator' || role == 'coordinator')
+          ? ['committee', 'group:committee']
+          : []
+      );
+    }
+
+    function memberGroupIds(clubId) {
+      let doc = memberDoc(clubId);
+      let m = doc != null ? doc.data : null;
+      return doc == null ? ['open-volunteers'] :
+        (m.get('groupIds', []) is list ? m.get('groupIds', []) : [])
+        .concat(m.get('teamIds', []) is list ? m.get('teamIds', []) : [])
+        .concat(roleGroupIds(clubId))
+        .concat(['open-volunteers']);
+    }
+
+    function dutyVisible(clubId, dutyData) {
+      return dutyData.openToAll == true ||
+        dutyData.createdBy == request.auth.uid ||
+        (dutyData.assignedUserId is string && dutyData.assignedUserId == request.auth.uid) ||
+        (
+          (
+            (dutyData.assignedGroupId is string && memberGroupIds(clubId).hasAny([dutyData.assignedGroupId])) ||
+            (dutyData.teamId is string && memberGroupIds(clubId).hasAny([dutyData.teamId])) ||
+            (dutyData.assignedGroupIds is list && dutyData.assignedGroupIds.hasAny(memberGroupIds(clubId)))
+          )
+        );
+    }
+
+    function hasValidDutyAssignment(dutyData) {
+      return dutyData.openToAll == true ||
+        (dutyData.assignedGroupId is string && dutyData.assignedGroupId.size() > 0) ||
+        (dutyData.teamId is string && dutyData.teamId.size() > 0) ||
+        (dutyData.assignedGroupIds is list && dutyData.assignedGroupIds.size() > 0);
+    }
+
+    function hasTeamChecklistAssignment(checklistData) {
+      return checklistData.teamId is string &&
+        checklistData.teamId.size() > 0 &&
+        checklistData.appliesTo is string &&
+        checklistData.appliesTo == 'team';
+    }
+
+    // ─── Safe Role Check Helper ───
+    function hasRole(memberDoc, userDoc, clubId, allowedRoles, allowedAccountTypes) {
+      // 1. Check member document role string
+      let r = memberDoc != null ? memberDoc.data.get('role', '') : '';
+      let singleRoleMatch = (r is string) && (r in allowedRoles);
+      
+      // 2. Check member document roles array
+      let rolesArr = memberDoc != null ? memberDoc.data.get('roles', []) : [];
+      let arrayRoleMatch = (rolesArr is list) && rolesArr.hasAny(allowedRoles);
+      
+      // 3. Fallback to root users profile accountType
+      let uClubId = userDoc != null ? userDoc.data.get('clubId', '') : '';
+      let uType = userDoc != null ? userDoc.data.get('accountType', '') : '';
+      let profileMatch = uClubId == clubId && (uType is string) && (uType in allowedAccountTypes);
+      
+      return singleRoleMatch || arrayRoleMatch || profileMatch;
+    }
+
+    // Owner = the person who created the club (full control)
+    function isClubOwner(clubId) {
+      let memberExists = exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid));
+      let memberDoc = memberExists ? get(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid)) : null;
+      
+      let userExists = exists(/databases/$(database)/documents/users/$(request.auth.uid));
+      let userDoc = userExists ? get(/databases/$(database)/documents/users/$(request.auth.uid)) : null;
+
+      return isSignedIn() && hasRole(
+        memberDoc, userDoc, clubId, 
+        ['Owner', 'owner'], 
+        ['clubowner', 'clubOwner', 'owner', 'Owner']
+      );
+    }
+
+    // Admin = appointed by Owner (management access)
+    function isClubAdmin(clubId) {
+      let memberExists = exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid));
+      let memberDoc = memberExists ? get(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid)) : null;
+
+      let userExists = exists(/databases/$(database)/documents/users/$(request.auth.uid));
+      let userDoc = userExists ? get(/databases/$(database)/documents/users/$(request.auth.uid)) : null;
+
+      return isSignedIn() && hasRole(
+        memberDoc, userDoc, clubId, 
+        ['Owner', 'owner', 'Admin', 'admin'], 
+        ['clubowner', 'clubOwner', 'owner', 'Owner', 'clubadmin', 'clubAdmin', 'admin', 'Admin']
+      );
+    }
+
+    // Staff = any role above Player/Parent in the club hierarchy
+    function isClubStaff(clubId) {
+      let memberExists = exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid));
+      let memberDoc = memberExists ? get(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid)) : null;
+
+      let userExists = exists(/databases/$(database)/documents/users/$(request.auth.uid));
+      let userDoc = userExists ? get(/databases/$(database)/documents/users/$(request.auth.uid)) : null;
+
+      let staffRoles = ['Owner', 'owner', 'Admin', 'admin', 'Coach', 'coach', 'Manager', 'manager', 'Executive', 'executive', 'Committee', 'committee', 'President', 'president', 'Vice President', 'vice president', 'Secretary', 'secretary', 'Treasurer', 'treasurer', 'Registrar', 'registrar', 'Coordinator', 'coordinator', 'Volunteer', 'volunteer'];
+      
+      return isSignedIn() && hasRole(
+        memberDoc, userDoc, clubId, 
+        staffRoles, 
+        ['clubowner', 'clubOwner', 'owner', 'Owner', 'clubadmin', 'clubAdmin', 'admin', 'Admin']
+      );
+    }
+
+    function canUpdateClubStoreBanner(clubId) {
+      return isClubStaff(clubId) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['storeBannerUrl', 'updatedAt']);
+    }
+
+    // ─── Users ───
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() &&
+        request.auth.uid == userId &&
+        request.resource.data.uid == userId;
+      // Allow own update OR admin updating clubMemberships for club management
+      allow update: if isSignedIn() && (
+        (
+          request.auth.uid == userId &&
+          request.resource.data.uid == userId
+        ) ||
+        // Allow update if only clubMemberships and updatedAt are being changed (for role sync)
+        (
+          request.resource.data.uid == userId &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['clubMemberships', 'updatedAt'])
+        ) ||
+        isSuperAdmin()
+      );
+      allow delete: if isSuperAdmin();
+    }
+
+    // ─── Clubs ───
+    match /clubs/{clubId} {
+      // Anyone signed in can read club docs (for invite code lookup, public page, etc.)
+      allow read: if isSignedIn();
+      // Only signed-in users can create a club (they become Owner)
+      allow create: if isSignedIn();
+      // Only Owner or Admin can update club details
+      allow update: if isClubAdmin(clubId) || isSuperAdmin() || canUpdateClubStoreBanner(clubId);
+      // Only the Owner can delete a club
+      allow delete: if isClubOwner(clubId) || isSuperAdmin();
+
+      // ─── Members sub-collection ───
+      match /members/{memberId} {
+        allow read: if isClubMember(clubId) || isSuperAdmin();
+        allow create: if isSignedIn();
+        allow update: if isClubStaff(clubId) || isSuperAdmin() || (isSignedIn() && request.auth.uid == memberId);
+        allow delete: if isClubAdmin(clubId) || isSuperAdmin();
+      }
+
+      // ─── Posts ───
+      match /posts/{postId} {
+        allow read: if isClubMember(clubId) || isSuperAdmin() || isPublicVisibility(resource.data.visibility);
+        allow create: if isClubAdmin(clubId) || isSuperAdmin() || canManageCommunication(clubId);
+        allow update: if isClubAdmin(clubId) || isSuperAdmin() || (
+          canManageCommunication(clubId) &&
+          resource.data.authorId == request.auth.uid
+        );
+        allow delete: if isClubAdmin(clubId) || isSuperAdmin() || (
+          canManageCommunication(clubId) &&
+          resource.data.authorId == request.auth.uid
+        );
+      }
+
+      // ─── Teams ───
+      match /teams/{teamId} {
+        allow read: if isClubStaff(clubId) || isSuperAdmin() || memberGroupIds(clubId).hasAny([teamId, 'team:' + teamId]);
+        allow create: if isClubStaff(clubId) || isSuperAdmin();
+        allow update: if isClubAdmin(clubId) || isSuperAdmin() || (
+          isClubStaff(clubId) &&
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+            'linkedOrganizationTeamId',
+            'linkedOrgTeamId',
+            'isOrganizationTeam',
+            'linkedBy',
+            'linkedAt'
+          ])
+        );
+        allow delete: if isClubAdmin(clubId) || isSuperAdmin();
+      }
+
+      // ─── Groups ───
+      match /groups/{groupId} {
+        allow read: if isClubStaff(clubId) || isSuperAdmin() || memberGroupIds(clubId).hasAny([groupId, 'group:' + groupId]);
+        allow create: if isClubStaff(clubId) || isSuperAdmin();
+        allow update: if isClubStaff(clubId) || isSuperAdmin();
+        allow delete: if isClubAdmin(clubId) || isSuperAdmin();
+      }
+
+      // ─── Group Memberships (optional advanced mapping) ───
+      match /groupMemberships/{membershipId} {
+        allow read: if isClubMember(clubId) || isSuperAdmin();
+        allow create: if isClubAdmin(clubId) || isSuperAdmin() || (
+          isClubMember(clubId) &&
+          request.resource.data.userId == request.auth.uid
+        );
+        allow update: if isClubAdmin(clubId) || isSuperAdmin() || (
+          isClubMember(clubId) &&
+          resource.data.userId == request.auth.uid &&
+          request.resource.data.userId == request.auth.uid
+        );
+        allow delete: if isClubAdmin(clubId) || isSuperAdmin() || (
+          isClubMember(clubId) &&
+          resource.data.userId == request.auth.uid
+        );
+      }
+
+      // ─── Events ───
+      match /events/{eventId} {
+        allow read: if isClubStaff(clubId) || isSuperAdmin() ||
+          resource.data.get('isPublic', false) == true ||
+          isPublicVisibility(resource.data.get('visibility', '')) ||
+          memberGroupIds(clubId).hasAny(resource.data.get('teamIds', [])) ||
+          memberGroupIds(clubId).hasAny(resource.data.get('groupIds', [])) ||
+          memberGroupIds(clubId).hasAny([resource.data.get('teamId', '')]);
+        allow create: if isClubStaff(clubId) || isSuperAdmin();
+        allow update: if isClubStaff(clubId) || isSuperAdmin() || (isSignedIn() && resource.data.createdBy == request.auth.uid);
+        allow delete: if isClubAdmin(clubId) || isSuperAdmin();
+      }
+
+      // ─── Products ───
+      match /products/{productId} {
+        allow read: if isClubMember(clubId) || isSuperAdmin() ||
+          (resource.data.active == true && isPublicVisibility(resource.data.visibility));
+        allow create: if isClubAdmin(clubId) || isSuperAdmin();
+        allow update: if isClubAdmin(clubId) || isSuperAdmin();
+        allow delete: if isClubAdmin(clubId) || isSuperAdmin();
+      }
+
+      // ─── Orders ───
+      match /orders/{orderId} {
+        allow read: if isClubAdmin(clubId) || isSuperAdmin() || (isSignedIn() && (
+          resource.data.userId == request.auth.uid ||
+          (
+            resource.data.paymentPolicy.parentApproverUids is list &&
+            resource.data.paymentPolicy.parentApproverUids.hasAny([request.auth.uid])
+          )
+        ));
+        allow create: if isClubMember(clubId) &&
+          request.resource.data.userId == request.auth.uid &&
+          !isPaidOrderStatus(request.resource.data.paymentStatus);
+        allow update: if (
+          (isClubAdmin(clubId) || isSuperAdmin()) &&
+          !isPaidOrderStatus(resource.data.paymentStatus) &&
+          request.resource.data.paymentStatus == resource.data.paymentStatus
+        ) || (
+          isSignedIn() &&
+          resource.data.paymentStatus == 'approval-required' &&
+          resource.data.paymentPolicy.parentApproverUids is list &&
+          resource.data.paymentPolicy.parentApproverUids.hasAny([request.auth.uid]) &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['paymentStatus', 'status', 'paymentPolicy', 'updatedAt']) &&
+          request.resource.data.paymentStatus == 'awaiting-payment' &&
+          request.resource.data.status == 'pending' &&
+          request.resource.data.paymentPolicy.requireParentApprovalForPayments == true &&
+          request.resource.data.paymentPolicy.parentApproverUids == resource.data.paymentPolicy.parentApproverUids &&
+          request.resource.data.paymentPolicy.approvedByUid == request.auth.uid
+        );
+        allow delete: if false;
+      }
+
+      // ─── Tasks ───
+      match /tasks/{taskId} {
+        // Staff need full task visibility to manage duty allocations across teams/groups.
+        allow read: if isClubStaff(clubId) || isSuperAdmin() || (isClubMember(clubId) && dutyVisible(clubId, resource.data));
+        allow create: if (isClubStaff(clubId) || isSuperAdmin()) && hasValidDutyAssignment(request.resource.data);
+        allow update: if (isClubStaff(clubId) || isSuperAdmin() || (isClubMember(clubId) && resource.data.assigneeId == request.auth.uid)) && hasValidDutyAssignment(request.resource.data);
+        allow delete: if isClubAdmin(clubId) || isSuperAdmin();
+      }
+
+      // ─── Task Templates ───
+      match /taskTemplates/{templateId} {
+        allow read: if isClubMember(clubId);
+        allow create: if isClubStaff(clubId) && hasValidDutyAssignment(request.resource.data);
+        allow update: if isClubStaff(clubId) && hasValidDutyAssignment(request.resource.data);
+        allow delete: if isClubAdmin(clubId);
+      }
+
+      // ─── Rosters ───
+      match /rosters/{rosterId} {
+        allow read: if isClubStaff(clubId) || isSuperAdmin() || (isClubMember(clubId) && dutyVisible(clubId, resource.data));
+        allow create: if isClubStaff(clubId) && hasValidDutyAssignment(request.resource.data);
+        allow update: if isClubStaff(clubId) || (
+          isClubMember(clubId) &&
+          dutyVisible(clubId, resource.data) &&
+          hasValidDutyAssignment(request.resource.data) &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['shifts', 'updatedAt'])
+        );
+        allow delete: if isClubAdmin(clubId);
+      }
+
+      // ─── Roster Templates ───
+      match /rosterTemplates/{templateId} {
+        allow read: if isClubMember(clubId);
+        allow create: if isClubStaff(clubId) && hasValidDutyAssignment(request.resource.data);
+        allow update: if isClubStaff(clubId) && hasValidDutyAssignment(request.resource.data);
+        allow delete: if isClubAdmin(clubId);
+      }
+
+      // ─── Roster Reminders ───
+      match /rosterReminders/{reminderId} {
+        allow read: if isClubStaff(clubId);
+        allow create: if isClubStaff(clubId);
+        allow update: if isClubStaff(clubId);
+        allow delete: if isClubAdmin(clubId);
+      }
+
+      // ─── Trades / Suppliers ───
+      match /trades/{tradeId} {
+        allow read: if isClubMember(clubId) || isSuperAdmin();
+        allow create: if isClubAdmin(clubId) || isSuperAdmin();
+        allow update: if isClubAdmin(clubId) || isSuperAdmin();
+        allow delete: if isClubAdmin(clubId) || isSuperAdmin();
+      }
+
+      // ─── Notifications ───
+      match /notifications/{notifId} {
+        allow read: if isClubAdmin(clubId) || isSuperAdmin() || (isClubMember(clubId) && (
+          resource.data.recipientId == request.auth.uid ||
+          resource.data.recipientId == 'all'
+        ));
+        allow create: if isClubMember(clubId) || isSuperAdmin();
+        allow update: if (isSignedIn() && resource.data.recipientId == request.auth.uid) || isSuperAdmin();
+        allow delete: if isClubAdmin(clubId) || isSuperAdmin();
+      }
+
+      // ─── Compliance Checklists ───
+      match /checklists/{checklistId} {
+        allow read: if isClubAdmin(clubId) || isSuperAdmin() || (isClubMember(clubId) && dutyVisible(clubId, resource.data));
+        allow create: if (isClubStaff(clubId) || isSuperAdmin()) && hasValidDutyAssignment(request.resource.data);
+        allow update: if isClubAdmin(clubId) || isSuperAdmin() || (
+          isClubMember(clubId) &&
+          dutyVisible(clubId, resource.data) &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['items', 'updatedAt', 'completedAt', 'completedBy'])
+        );
+        allow delete: if isClubAdmin(clubId);
+      }
+
+      // ─── Team Compliance Tracking ───
+      match /teamCompliance/{teamId} {
+        allow read: if isClubMember(clubId);
+        allow create: if isClubStaff(clubId);
+        allow update: if isClubStaff(clubId);
+        allow delete: if isClubAdmin(clubId);
+      }
+
+      // ─── Drill Library ───
+      match /drills/{drillId} {
+        allow read: if isClubMember(clubId);
+        allow create: if isClubStaff(clubId);
+        allow update: if isClubStaff(clubId);
+        allow delete: if isClubAdmin(clubId);
+      }
+
+      // ─── Training Plans ───
+      match /trainingPlans/{planId} {
+        allow read: if isClubMember(clubId);
+        allow create: if isClubStaff(clubId);
+        allow update: if isClubStaff(clubId);
+        allow delete: if isClubAdmin(clubId);
+      }
+
+      // ─── Family Profiles ───
+      match /familyProfiles/{parentUid} {
+        allow read: if isClubMember(clubId) && (
+          request.auth.uid == parentUid ||
+          isClubStaff(clubId)
+        );
+        allow create: if isClubMember(clubId) && request.auth.uid == parentUid;
+        allow update: if isClubMember(clubId) && (
+          request.auth.uid == parentUid ||
+          isClubStaff(clubId)
+        );
+        allow delete: if isClubAdmin(clubId);
+      }
+
+      // ─── Player Profiles (core child record) ───
+      match /playerProfiles/{playerId} {
+        allow read: if isClubMember(clubId) && (
+          isClubStaff(clubId) ||
+          (resource.data.parentUids is list && resource.data.parentUids.hasAny([request.auth.uid])) ||
+          (resource.data.linkedPlayerUserUid is string && resource.data.linkedPlayerUserUid == request.auth.uid)
+        );
+        allow create: if isClubMember(clubId) && (
+          isClubStaff(clubId) ||
+          (request.resource.data.parentUids is list && request.resource.data.parentUids.hasAny([request.auth.uid]))
+        );
+        allow update: if isClubMember(clubId) && (
+          isClubStaff(clubId) ||
+          (resource.data.parentUids is list && resource.data.parentUids.hasAny([request.auth.uid])) ||
+          (resource.data.linkedPlayerUserUid is string && resource.data.linkedPlayerUserUid == request.auth.uid)
+        );
+        allow delete: if isClubAdmin(clubId);
+      }
+
+      // ─── League Organisations ───
+      match /leagueOrganizations/{orgId} {
+        allow read: if isClubMember(clubId);
+        allow create: if isClubAdmin(clubId);
+        allow update: if isClubAdmin(clubId);
+        allow delete: if isClubAdmin(clubId);
+      }
+
+      // ─── League Competitions ───
+      match /leagueCompetitions/{competitionId} {
+        allow read: if isClubMember(clubId);
+        allow create: if isClubAdmin(clubId);
+        allow update: if isClubAdmin(clubId);
+        allow delete: if isClubAdmin(clubId);
+      }
+
+      // ─── League Fixtures ───
+      match /leagueFixtures/{fixtureId} {
+        allow read: if isClubMember(clubId);
+        allow create: if isClubAdmin(clubId);
+        allow update: if isClubAdmin(clubId);
+        allow delete: if isClubAdmin(clubId);
+      }
+
+      // ─── League Announcements ───
+      match /leagueAnnouncements/{announcementId} {
+        allow read: if isClubMember(clubId);
+        allow create: if isClubAdmin(clubId);
+        allow update: if isClubAdmin(clubId);
+        allow delete: if isClubAdmin(clubId);
+      }
+
+      // ─── Live Score Integrations ───
+      match /liveScoreIntegrations/{integrationId} {
+        allow read: if isClubMember(clubId);
+        allow create: if isClubAdmin(clubId);
+        allow update: if isClubAdmin(clubId);
+        allow delete: if isClubAdmin(clubId);
+      }
+
+      // ─── Sponsors ───
+      match /sponsors/{sponsorId} {
+        allow read: if isClubMember(clubId);
+        allow create: if isClubStaff(clubId);
+        allow update: if isClubStaff(clubId);
+        allow delete: if isClubAdmin(clubId);
+      }
+
+      // ─── Facility Bookings ───
+      match /facilityBookings/{bookingId} {
+        allow read: if isClubMember(clubId);
+        allow create: if isClubMember(clubId) && request.resource.data.requesterId == request.auth.uid;
+        allow update: if isClubStaff(clubId);
+        allow delete: if isClubAdmin(clubId);
+      }
+
+      // ─── Role Change Requests ───
+      match /roleChangeRequests/{requestId} {
+        // Members can read their own request; admins can read all
+        allow read: if isClubAdmin(clubId) || isSuperAdmin() || (
+          isClubMember(clubId) && request.auth.uid == requestId
+        );
+        // Any member can create their own request (doc ID = their uid)
+        allow create: if isClubMember(clubId) &&
+          request.auth.uid == requestId &&
+          request.resource.data.userId == request.auth.uid &&
+          request.resource.data.status == 'pending';
+        // Admins can update (approve/reject); member can update own pending request
+        allow update: if isClubAdmin(clubId) || isSuperAdmin() || (
+          isClubMember(clubId) &&
+          request.auth.uid == requestId &&
+          resource.data.status == 'pending' &&
+          request.resource.data.status == 'pending'
+        );
+        // Admins can delete processed requests
+        allow delete: if isClubAdmin(clubId) || isSuperAdmin();
+      }
+
+      // ─── Sponsor Invites ───
+      match /sponsorInvites/{inviteId} {
+        allow read: if isClubMember(clubId) || isSuperAdmin();
+        allow create: if isClubStaff(clubId) || isSuperAdmin();
+        allow update: if isClubStaff(clubId) || isSuperAdmin();
+        allow delete: if isClubAdmin(clubId) || isSuperAdmin();
+      }
+
+
+
+      // ─── Team Compliance ───
+      match /teamCompliance/{complianceId} {
+        allow read: if isClubMember(clubId) || isSuperAdmin();
+        allow create: if isClubStaff(clubId) || isSuperAdmin();
+        allow update: if isClubStaff(clubId) || isSuperAdmin();
+        allow delete: if isClubAdmin(clubId) || isSuperAdmin();
+      }
+    }
+  }
+}

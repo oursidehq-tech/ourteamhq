@@ -1,0 +1,51 @@
+{
+  "expo": {
+    "name": "GreenSports",
+    "slug": "greensports",
+    "version": "1.0.1",
+    "runtimeVersion": "1.0.1",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "updates": {
+      "enabled": true,
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 0,
+      "url": "https://u.expo.dev/209964c5-416d-4510-b2de-53502c576607"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.ourteamhq.app",
+      "buildNumber": "2"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "package": "com.ourteamhq.app",
+      "versionCode": 9
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-font",
+      "expo-updates"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "209964c5-416d-4510-b2de-53502c576607"
+      }
+    },
+    "owner": "greensports"
+  }
+}
