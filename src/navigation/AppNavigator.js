@@ -24,6 +24,7 @@ import {
   Calendar,
   ShoppingBag,
   Menu,
+  ArrowLeft,
 } from "lucide-react-native";
 import { useAuth } from "../contexts/AuthContext";
 import { useClub } from "../contexts/ClubContext";
@@ -118,10 +119,14 @@ function AnimatedTabBar({ state, descriptors, navigation }) {
   const animatedStyle = useAnimatedStyle(() => {
     const progress = collapsed.value;
     const sideInset = compactMode ? 20 : 28;
-    const expandedWidth = Math.max(screenWidth - sideInset, 0);
+    const maxExpandedWidth = screenWidth >= 900 ? 760 : 680;
+    const expandedWidth = Math.min(
+      Math.max(screenWidth - sideInset, 0),
+      maxExpandedWidth,
+    );
     const compactWidth = Math.min(Math.max(screenWidth * 0.88, 310), 420);
     const width = interpolate(progress, [0, 1], [expandedWidth, compactWidth]);
-    const expandedHeight = compactMode ? 64 : 72;
+    const expandedHeight = screenWidth >= 900 ? 64 : compactMode ? 64 : 72;
     const collapsedHeight = compactMode ? 56 : 62;
 
     return {
@@ -144,7 +149,11 @@ function AnimatedTabBar({ state, descriptors, navigation }) {
   const activePillStyle = useAnimatedStyle(() => {
     const progress = collapsed.value;
     const sideInset = compactMode ? 20 : 28;
-    const expandedWidth = Math.max(screenWidth - sideInset, 0);
+    const maxExpandedWidth = screenWidth >= 900 ? 760 : 680;
+    const expandedWidth = Math.min(
+      Math.max(screenWidth - sideInset, 0),
+      maxExpandedWidth,
+    );
     const compactWidth = Math.min(Math.max(screenWidth * 0.88, 310), 420);
     const containerWidth = interpolate(
       progress,
@@ -265,6 +274,39 @@ function BottomTabs() {
   );
 }
 
+const stackBackHeaderOptions = {
+  headerShown: true,
+  header: ({ navigation }) => <StackBackHeader navigation={navigation} />,
+};
+
+function StackBackHeader({ navigation }) {
+  const handleBack = () => {
+    if (navigation.canGoBack()) {
+      navigation.goBack();
+      return;
+    }
+
+    navigation.navigate("Main");
+  };
+
+  return (
+    <View style={styles.stackHeader}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Go back"
+        onPress={handleBack}
+        style={({ pressed }) => [
+          styles.backButton,
+          pressed && styles.backButtonPressed,
+        ]}
+      >
+        <ArrowLeft color="#0A7F48" size={20} strokeWidth={2.4} />
+        <Text style={styles.backButtonText}>Back</Text>
+      </Pressable>
+    </View>
+  );
+}
+
 export default function AppNavigator() {
   const { isAuthenticated, initializing, profile, loading } = useAuth();
 
@@ -303,92 +345,92 @@ export default function AppNavigator() {
                 <Stack.Screen
                   name="SuperAdminClubDetails"
                   component={SuperAdminClubDetailsScreen}
+                  options={stackBackHeaderOptions}
                 />
               </>
             ) : canEnterClubApp ? (
               <>
                 <Stack.Screen name="Main" component={BottomTabs} />
-                <Stack.Screen
-                  name="Notifications"
-                  component={NotificationsScreen}
-                />
-                <Stack.Screen name="Search" component={SearchScreen} />
-                <Stack.Screen name="CreateItem" component={CreateItemScreen} />
-                <Stack.Screen name="TeamFeed" component={TeamFeedScreen} />
-                <Stack.Screen
-                  name="TeamMembers"
-                  component={TeamMembersScreen}
-                />
-                <Stack.Screen
-                  name="ClubOperations"
-                  component={ClubOperationsScreen}
-                />
-                <Stack.Screen
-                  name="DrillLibrary"
-                  component={DrillsScreen}
-                />
-                <Stack.Screen
-                  name="LeaguePlatform"
-                  component={LeaguePlatformScreen}
-                />
-                <Stack.Screen name="Matches" component={MatchesScreen} />
-                <Stack.Screen
-                  name="MatchDetails"
-                  component={MatchDetailsScreen}
-                />
-                <Stack.Screen name="Profile" component={ProfileScreen} />
-                <Stack.Screen name="Tasks" component={TasksScreen} />
-                <Stack.Screen name="Rostering" component={RosteringScreen} />
-                <Stack.Screen name="Trades" component={TradesScreen} />
-                <Stack.Screen
-                  name="GroupDetails"
-                  component={GroupDetailsScreen}
-                />
-                <Stack.Screen
-                  name="RoleRequests"
-                  component={RoleRequestsScreen}
-                />
-                <Stack.Screen
-                  name="GroupMembers"
-                  component={GroupMembersScreen}
-                />
-                <Stack.Screen name="ClubInfo" component={ClubInfoScreen} />
-                <Stack.Screen
-                  name="PublicClubPage"
-                  component={PublicClubPageScreen}
-                />
-                <Stack.Screen name="Billing" component={BillingScreen} />
-                <Stack.Screen name="Cart" component={CartScreen} />
-                <Stack.Screen name="MyOrders" component={MyOrdersScreen} />
-                <Stack.Screen
-                  name="OrdersDashboard"
-                  component={OrdersDashboardScreen}
-                />
-                <Stack.Screen
-                  name="ProductManager"
-                  component={ProductManagerScreen}
-                />
-                <Stack.Screen
-                  name="ProductDetail"
-                  component={ProductDetailScreen}
-                />
-                <Stack.Screen name="Updates" component={UpdatesScreen} />
-                <Stack.Screen name="Events" component={EventsScreen} />
-                <Stack.Screen name="Network" component={NetworkScreen} />
-                <Stack.Screen name="AdminPage" component={AdminPageScreen} />
-                <Stack.Screen name="Settings" component={SettingsScreen} />
-                <Stack.Screen
-                  name="HelpSupport"
-                  component={HelpSupportScreen}
-                />
-                <Stack.Screen
-                  name="RoleChangeRequest"
-                  component={RoleChangeRequestScreen}
-                />
-                <Stack.Screen
-                  name="Organisation"
-                  component={OrganisationScreen}
-                />
+                <Stack.Group screenOptions={stackBackHeaderOptions}>
+                  <Stack.Screen
+                    name="Notifications"
+                    component={NotificationsScreen}
+                  />
+                  <Stack.Screen name="Search" component={SearchScreen} />
+                  <Stack.Screen name="CreateItem" component={CreateItemScreen} />
+                  <Stack.Screen name="TeamFeed" component={TeamFeedScreen} />
+                  <Stack.Screen
+                    name="TeamMembers"
+                    component={TeamMembersScreen}
+                  />
+                  <Stack.Screen
+                    name="ClubOperations"
+                    component={ClubOperationsScreen}
+                  />
+                  <Stack.Screen name="DrillLibrary" component={DrillsScreen} />
+                  <Stack.Screen
+                    name="LeaguePlatform"
+                    component={LeaguePlatformScreen}
+                  />
+                  <Stack.Screen name="Matches" component={MatchesScreen} />
+                  <Stack.Screen
+                    name="MatchDetails"
+                    component={MatchDetailsScreen}
+                  />
+                  <Stack.Screen name="Profile" component={ProfileScreen} />
+                  <Stack.Screen name="Tasks" component={TasksScreen} />
+                  <Stack.Screen name="Rostering" component={RosteringScreen} />
+                  <Stack.Screen name="Trades" component={TradesScreen} />
+                  <Stack.Screen
+                    name="GroupDetails"
+                    component={GroupDetailsScreen}
+                  />
+                  <Stack.Screen
+                    name="RoleRequests"
+                    component={RoleRequestsScreen}
+                  />
+                  <Stack.Screen
+                    name="GroupMembers"
+                    component={GroupMembersScreen}
+                  />
+                  <Stack.Screen name="ClubInfo" component={ClubInfoScreen} />
+                  <Stack.Screen
+                    name="PublicClubPage"
+                    component={PublicClubPageScreen}
+                  />
+                  <Stack.Screen name="Billing" component={BillingScreen} />
+                  <Stack.Screen name="Cart" component={CartScreen} />
+                  <Stack.Screen name="MyOrders" component={MyOrdersScreen} />
+                  <Stack.Screen
+                    name="OrdersDashboard"
+                    component={OrdersDashboardScreen}
+                  />
+                  <Stack.Screen
+                    name="ProductManager"
+                    component={ProductManagerScreen}
+                  />
+                  <Stack.Screen
+                    name="ProductDetail"
+                    component={ProductDetailScreen}
+                  />
+                  <Stack.Screen name="Updates" component={UpdatesScreen} />
+                  <Stack.Screen name="Events" component={EventsScreen} />
+                  <Stack.Screen name="Network" component={NetworkScreen} />
+                  <Stack.Screen name="AdminPage" component={AdminPageScreen} />
+                  <Stack.Screen name="Settings" component={SettingsScreen} />
+                  <Stack.Screen
+                    name="HelpSupport"
+                    component={HelpSupportScreen}
+                  />
+                  <Stack.Screen
+                    name="RoleChangeRequest"
+                    component={RoleChangeRequestScreen}
+                  />
+                  <Stack.Screen
+                    name="Organisation"
+                    component={OrganisationScreen}
+                  />
+                </Stack.Group>
               </>
             ) : (
               <>
@@ -482,6 +524,7 @@ const styles = StyleSheet.create({
     height: "100%",
     alignItems: "center",
     justifyContent: "center",
+    outlineStyle: "none",
   },
   labelWrap: {
     height: "92%",
@@ -494,12 +537,38 @@ const styles = StyleSheet.create({
   tabLabel: {
     fontSize: 8,
     fontWeight: "700",
-    letterSpacing: 0.15,
+    letterSpacing: 0,
   },
   tabLabelActive: {
     color: "#0A7F48",
   },
   tabLabelInactive: {
     color: "#7F868E",
+  },
+  stackHeader: {
+    height: 50,
+    backgroundColor: "#FFFFFF",
+    borderBottomWidth: 1,
+    borderBottomColor: "#E8EDF2",
+    justifyContent: "center",
+    paddingHorizontal: 16,
+  },
+  backButton: {
+    alignSelf: "flex-start",
+    minHeight: 36,
+    borderRadius: 18,
+    paddingHorizontal: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    outlineStyle: "none",
+  },
+  backButtonPressed: {
+    backgroundColor: "rgba(16,139,81,0.08)",
+  },
+  backButtonText: {
+    color: "#0A7F48",
+    fontSize: 14,
+    fontWeight: "700",
   },
 });

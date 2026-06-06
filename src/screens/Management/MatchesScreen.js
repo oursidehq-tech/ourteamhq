@@ -8,6 +8,7 @@ import {
   Alert,
   ActivityIndicator,
   Modal,
+  useWindowDimensions,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Calendar as DatePickerCalendar } from "react-native-calendars";
@@ -40,6 +41,7 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 export default function MatchesScreen({ navigation }) {
+  const { width } = useWindowDimensions();
   const { activeClubId, userRole, userGroupIds } = useClub();
   const { user, profile } = useAuth();
   const normalizedRole = String(userRole || "")
@@ -158,6 +160,7 @@ export default function MatchesScreen({ navigation }) {
     .reverse();
 
   const visibleMatches = activeTab === 0 ? upcomingMatches : completedMatches;
+  const pageWidthStyle = width >= 900 ? styles.pageWidth : null;
 
   const teamNameById = useMemo(() => {
     const map = {};
@@ -368,7 +371,7 @@ export default function MatchesScreen({ navigation }) {
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
-      <View style={styles.header}>
+      <View style={[styles.header, pageWidthStyle]}>
         <View>
           <Text variant="h2">Matches</Text>
           <Text variant="small" style={{ marginTop: 2 }}>
@@ -390,7 +393,7 @@ export default function MatchesScreen({ navigation }) {
         </View>
       </View>
 
-      <View style={styles.segmentWrap}>
+      <View style={[styles.segmentWrap, pageWidthStyle]}>
         <SegmentedControl
           options={["Upcoming", "Results"]}
           selectedIndex={activeTab}
@@ -398,7 +401,7 @@ export default function MatchesScreen({ navigation }) {
         />
       </View>
 
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView contentContainerStyle={[styles.content, pageWidthStyle]}>
         {showCreate && canManageMatches ? (
           <Card style={styles.formCard}>
             <Text variant="h4" style={{ marginBottom: theme.spacing.md }}>
@@ -1021,6 +1024,11 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: theme.colors.background,
+  },
+  pageWidth: {
+    width: "100%",
+    maxWidth: 1024,
+    alignSelf: "center",
   },
   header: {
     flexDirection: "row",

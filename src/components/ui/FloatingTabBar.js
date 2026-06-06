@@ -40,7 +40,8 @@ export default function FloatingTabBar({ navigation, activeScreen }) {
   );
 
   const sideInset = 28;
-  const barWidth = Math.max(screenWidth - sideInset, 0);
+  const maxBarWidth = screenWidth >= 900 ? 760 : 680;
+  const barWidth = Math.min(Math.max(screenWidth - sideInset, 0), maxBarWidth);
   const tabCount = visibleTabs.length;
 
   // Calculate pill position for the active screen
@@ -147,6 +148,7 @@ const styles = StyleSheet.create({
     height: "100%",
     alignItems: "center",
     justifyContent: "center",
+    outlineStyle: "none",
   },
   labelWrap: {
     alignItems: "center",
@@ -157,7 +159,7 @@ const styles = StyleSheet.create({
   tabLabel: {
     fontSize: 8,
     fontWeight: "700",
-    letterSpacing: 0.15,
+    letterSpacing: 0,
   },
   tabLabelActive: {
     color: "#0A7F48",
