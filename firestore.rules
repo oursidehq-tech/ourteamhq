@@ -339,10 +339,10 @@ service cloud.firestore {
 
       // ─── Task Templates ───
       match /taskTemplates/{templateId} {
-        allow read: if isClubMember(clubId);
-        allow create: if isClubStaff(clubId) && hasValidDutyAssignment(request.resource.data);
-        allow update: if isClubStaff(clubId) && hasValidDutyAssignment(request.resource.data);
-        allow delete: if isClubAdmin(clubId);
+        allow read: if isClubMember(clubId) || isSuperAdmin();
+        allow create: if (isClubStaff(clubId) || isSuperAdmin()) && hasValidDutyAssignment(request.resource.data);
+        allow update: if (isClubStaff(clubId) || isSuperAdmin()) && hasValidDutyAssignment(request.resource.data);
+        allow delete: if isClubAdmin(clubId) || isSuperAdmin();
       }
 
       // ─── Rosters ───
@@ -360,18 +360,18 @@ service cloud.firestore {
 
       // ─── Roster Templates ───
       match /rosterTemplates/{templateId} {
-        allow read: if isClubMember(clubId);
-        allow create: if isClubStaff(clubId) && hasValidDutyAssignment(request.resource.data);
-        allow update: if isClubStaff(clubId) && hasValidDutyAssignment(request.resource.data);
-        allow delete: if isClubAdmin(clubId);
+        allow read: if isClubMember(clubId) || isSuperAdmin();
+        allow create: if (isClubStaff(clubId) || isSuperAdmin()) && hasValidDutyAssignment(request.resource.data);
+        allow update: if (isClubStaff(clubId) || isSuperAdmin()) && hasValidDutyAssignment(request.resource.data);
+        allow delete: if isClubAdmin(clubId) || isSuperAdmin();
       }
 
       // ─── Roster Reminders ───
       match /rosterReminders/{reminderId} {
-        allow read: if isClubStaff(clubId);
-        allow create: if isClubStaff(clubId);
-        allow update: if isClubStaff(clubId);
-        allow delete: if isClubAdmin(clubId);
+        allow read: if isClubStaff(clubId) || isSuperAdmin();
+        allow create: if isClubStaff(clubId) || isSuperAdmin();
+        allow update: if isClubStaff(clubId) || isSuperAdmin();
+        allow delete: if isClubAdmin(clubId) || isSuperAdmin();
       }
 
       // ─── Trades / Suppliers ───
@@ -407,26 +407,26 @@ service cloud.firestore {
 
       // ─── Team Compliance Tracking ───
       match /teamCompliance/{teamId} {
-        allow read: if isClubMember(clubId);
-        allow create: if isClubStaff(clubId);
-        allow update: if isClubStaff(clubId);
-        allow delete: if isClubAdmin(clubId);
+        allow read: if isClubMember(clubId) || isSuperAdmin();
+        allow create: if isClubStaff(clubId) || isSuperAdmin();
+        allow update: if isClubStaff(clubId) || isSuperAdmin();
+        allow delete: if isClubAdmin(clubId) || isSuperAdmin();
       }
 
       // ─── Drill Library ───
       match /drills/{drillId} {
-        allow read: if isClubMember(clubId);
-        allow create: if isClubStaff(clubId);
-        allow update: if isClubStaff(clubId);
-        allow delete: if isClubAdmin(clubId);
+        allow read: if isClubMember(clubId) || isSuperAdmin();
+        allow create: if isClubStaff(clubId) || isSuperAdmin();
+        allow update: if isClubStaff(clubId) || isSuperAdmin();
+        allow delete: if isClubAdmin(clubId) || isSuperAdmin();
       }
 
       // ─── Training Plans ───
       match /trainingPlans/{planId} {
-        allow read: if isClubMember(clubId);
-        allow create: if isClubStaff(clubId);
-        allow update: if isClubStaff(clubId);
-        allow delete: if isClubAdmin(clubId);
+        allow read: if isClubMember(clubId) || isSuperAdmin();
+        allow create: if isClubStaff(clubId) || isSuperAdmin();
+        allow update: if isClubStaff(clubId) || isSuperAdmin();
+        allow delete: if isClubAdmin(clubId) || isSuperAdmin();
       }
 
       // ─── Family Profiles ───
@@ -464,42 +464,42 @@ service cloud.firestore {
 
       // ─── League Organisations ───
       match /leagueOrganizations/{orgId} {
-        allow read: if isClubMember(clubId);
-        allow create: if isClubAdmin(clubId);
-        allow update: if isClubAdmin(clubId);
-        allow delete: if isClubAdmin(clubId);
+        allow read: if isClubMember(clubId) || isSuperAdmin();
+        allow create: if isClubAdmin(clubId) || isSuperAdmin();
+        allow update: if isClubAdmin(clubId) || isSuperAdmin();
+        allow delete: if isClubAdmin(clubId) || isSuperAdmin();
       }
 
       // ─── League Competitions ───
       match /leagueCompetitions/{competitionId} {
-        allow read: if isClubMember(clubId);
-        allow create: if isClubAdmin(clubId);
-        allow update: if isClubAdmin(clubId);
-        allow delete: if isClubAdmin(clubId);
+        allow read: if isClubMember(clubId) || isSuperAdmin();
+        allow create: if isClubAdmin(clubId) || isSuperAdmin();
+        allow update: if isClubAdmin(clubId) || isSuperAdmin();
+        allow delete: if isClubAdmin(clubId) || isSuperAdmin();
       }
 
       // ─── League Fixtures ───
       match /leagueFixtures/{fixtureId} {
-        allow read: if isClubMember(clubId);
-        allow create: if isClubAdmin(clubId);
-        allow update: if isClubAdmin(clubId);
-        allow delete: if isClubAdmin(clubId);
+        allow read: if isClubMember(clubId) || isSuperAdmin();
+        allow create: if isClubAdmin(clubId) || isSuperAdmin();
+        allow update: if isClubAdmin(clubId) || isSuperAdmin();
+        allow delete: if isClubAdmin(clubId) || isSuperAdmin();
       }
 
       // ─── League Announcements ───
       match /leagueAnnouncements/{announcementId} {
-        allow read: if isClubMember(clubId);
-        allow create: if isClubAdmin(clubId);
-        allow update: if isClubAdmin(clubId);
-        allow delete: if isClubAdmin(clubId);
+        allow read: if isClubMember(clubId) || isSuperAdmin();
+        allow create: if isClubAdmin(clubId) || isSuperAdmin();
+        allow update: if isClubAdmin(clubId) || isSuperAdmin();
+        allow delete: if isClubAdmin(clubId) || isSuperAdmin();
       }
 
       // ─── Live Score Integrations ───
       match /liveScoreIntegrations/{integrationId} {
-        allow read: if isClubMember(clubId);
-        allow create: if isClubAdmin(clubId);
-        allow update: if isClubAdmin(clubId);
-        allow delete: if isClubAdmin(clubId);
+        allow read: if isClubMember(clubId) || isSuperAdmin();
+        allow create: if isClubAdmin(clubId) || isSuperAdmin();
+        allow update: if isClubAdmin(clubId) || isSuperAdmin();
+        allow delete: if isClubAdmin(clubId) || isSuperAdmin();
       }
 
       // ─── Sponsors ───
