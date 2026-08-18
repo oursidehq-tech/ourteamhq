@@ -521,7 +521,7 @@ service cloud.firestore {
       // ─── Bookings ───
       match /bookings/{bookingId} {
         allow read: if isClubMember(clubId) || isSuperAdmin();
-        allow create: if isClubStaff(clubId) || isSuperAdmin();
+        allow create: if isClubMember(clubId) || isSuperAdmin();
         allow update: if isClubStaff(clubId) || isSuperAdmin();
         allow delete: if isClubAdmin(clubId) || isSuperAdmin();
       }

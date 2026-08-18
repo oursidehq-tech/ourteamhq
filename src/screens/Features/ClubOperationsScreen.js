@@ -1260,7 +1260,18 @@ export default function ClubOperationsScreen({ navigation, route }) {
 
   const renderTeamComplianceTab = () => (
     <>
-      {(teamRows || []).map((team) => {
+      {(!teamRows || teamRows.length === 0) ? (
+        <Card style={styles.panelCard}>
+          <View style={{ alignItems: "center", paddingVertical: 24 }}>
+            <ShieldCheck color={theme.colors.primary} size={40} style={{ marginBottom: 12 }} />
+            <Text variant="h4" style={{ marginBottom: 8 }}>Team Compliance Roles</Text>
+            <Text variant="body" color={theme.colors.textSecondary} style={{ textAlign: "center", maxWidth: 300 }}>
+              No teams found for this club. Create a team first to manage team compliance roles, or use the Web Admin dashboard to review staff compliance documentation.
+            </Text>
+          </View>
+        </Card>
+      ) : (
+        (teamRows || []).map((team) => {
         const row = complianceByTeamId.get(team.id) || {};
 
         return (
@@ -1405,7 +1416,8 @@ export default function ClubOperationsScreen({ navigation, route }) {
             </View>
           </Card>
         );
-      })}
+      })
+      )}
     </>
   );
 
@@ -2712,6 +2724,54 @@ const styles = StyleSheet.create({
   filterChipActive: {
     backgroundColor: theme.colors.primary,
     borderColor: theme.colors.primary,
+  },
+  selectChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: theme.colors.surface,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    marginRight: 8,
+    marginBottom: 8,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  selectChipActive: {
+    backgroundColor: theme.colors.primary,
+    borderColor: theme.colors.primary,
+  },
+  allDayToggleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: theme.radius.md,
+    backgroundColor: theme.colors.surface,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    marginBottom: 16,
+  },
+  switchTrack: {
+    width: 44,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: theme.colors.border,
+    padding: 2,
+    justifyContent: "center",
+  },
+  switchTrackActive: {
+    backgroundColor: theme.colors.primary,
+  },
+  switchThumb: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: "#FFFFFF",
+  },
+  switchThumbActive: {
+    alignSelf: "flex-end",
   },
 });
 
