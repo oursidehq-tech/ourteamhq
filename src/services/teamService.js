@@ -223,30 +223,22 @@ export const subscribeToTeams = (clubId, callback, options = {}) => {
   const { teamIds = [], isAdmin = false } = options;
   const colRef = teamsCol(clubId);
 
-  // If Admin/Staff, they can see all teams
-  if (isAdmin) {
+  // If Admin/Staff or no specific teamIds filter provided, fetch all teams
+  if (isAdmin || !Array.isArray(teamIds) || teamIds.length === 0) {
     const q = query(colRef, orderBy("name"));
     return onSnapshot(
       q,
       (snap) => callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
       (error) => {
         if (error?.code !== "permission-denied") {
-          console.error("subscribeToTeams (admin) error:", error);
+          console.error("subscribeToTeams error:", error);
         }
         callback([]);
       },
     );
   }
 
-  // For regular members/players, we must filter by their teamIds 
-  // to avoid permission-denied errors from the restricted security rules.
-  if (!Array.isArray(teamIds) || teamIds.length === 0) {
-    callback([]);
-    return () => {};
-  }
-
-  // Firestore "in" query limited to 10-30 items depending on version. 
-  // Most users have < 10 teams.
+  // For regular members with specified teamIds, filter by teamIds
   const q = query(colRef, where("__name__", "in", teamIds.slice(0, 30)));
   return onSnapshot(
     q,

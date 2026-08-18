@@ -88,7 +88,7 @@ export default function OrganisationScreen({ navigation }) {
     const u1 = subscribeToLeagueOrganizations(activeClubId, setOrganizations);
     const u2 = subscribeToLeagueCompetitions(activeClubId, setCompetitions);
     const u3 = subscribeToLeagueFixtures(activeClubId, setFixtures);
-    const u4 = subscribeToTeams(activeClubId, setOrgTeams);
+    const u4 = subscribeToTeams(activeClubId, setOrgTeams, { isAdmin: true });
     return () => { u1?.(); u2?.(); u3?.(); u4?.(); };
   }, [activeClubId]);
 

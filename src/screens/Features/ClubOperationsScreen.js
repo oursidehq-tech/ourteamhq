@@ -191,7 +191,10 @@ export default function ClubOperationsScreen({ navigation, route }) {
       activeClubId,
       setComplianceRows,
     );
-    const unsubTeams = subscribeToTeams(activeClubId, setTeamRows);
+    const unsubTeams = subscribeToTeams(activeClubId, setTeamRows, {
+      isAdmin: isStaff || isAdmin,
+      teamIds: userGroupIds,
+    });
     const unsubDrills = subscribeToDrills(activeClubId, setDrills, {
       userGroupIds,
       userId: user?.uid || "",

@@ -73,7 +73,7 @@ export default function TeamMembersScreen({ navigation, route }) {
     const unsub = subscribeToTeams(activeClubId, (rows) => {
       const next = (rows || []).find((row) => row.id === teamId);
       if (next) setTeam(next);
-    });
+    }, { isAdmin: true });
     return () => unsub?.();
   }, [activeClubId, teamId]);
 
