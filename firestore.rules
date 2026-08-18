@@ -11,6 +11,7 @@ service cloud.firestore {
       return isSignedIn() && (
         exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid)) ||
         (exists(/databases/$(database)/documents/clubs/$(clubId)) && get(/databases/$(database)/documents/clubs/$(clubId)).data.createdBy == request.auth.uid) ||
+        isSuperAdmin() ||
         isClubAdmin(clubId)
       );
     }
@@ -22,8 +23,8 @@ service cloud.firestore {
           (
             exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
             (
-              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.accountType == 'superadmin' ||
-              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.email in ['admin@gmail.com', 'ourteamhq@gmail.com']
+              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('accountType', '') in ['superadmin', 'admin', 'Superadmin', 'Admin', 'clubAdmin', 'clubOwner', 'owner', 'Owner'] ||
+              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('email', '') in ['admin@gmail.com', 'ourteamhq@gmail.com']
             )
           )
         );
@@ -121,7 +122,7 @@ service cloud.firestore {
       // 3. Fallback to root users profile accountType
       let uClubId = userDoc != null ? userDoc.data.get('clubId', '') : '';
       let uType = userDoc != null ? userDoc.data.get('accountType', '') : '';
-      let profileMatch = uClubId == clubId && (uType is string) && (uType in allowedAccountTypes);
+      let profileMatch = (uType is string) && (uType in allowedAccountTypes) && (uClubId == clubId || uClubId == '' || uClubId == null);
       
       return singleRoleMatch || arrayRoleMatch || profileMatch;
     }
@@ -138,6 +139,7 @@ service cloud.firestore {
 
       return isSignedIn() && (
         isCreator ||
+        isSuperAdmin() ||
         hasRole(
           memberDoc, userDoc, clubId, 
           ['Owner', 'owner'], 
@@ -158,6 +160,7 @@ service cloud.firestore {
 
       return isSignedIn() && (
         isCreator ||
+        isSuperAdmin() ||
         hasRole(
           memberDoc, userDoc, clubId, 
           ['Owner', 'owner', 'Admin', 'admin'], 
@@ -180,6 +183,7 @@ service cloud.firestore {
       
       return isSignedIn() && (
         isCreator ||
+        isSuperAdmin() ||
         hasRole(
           memberDoc, userDoc, clubId, 
           staffRoles, 
@@ -392,9 +396,9 @@ service cloud.firestore {
 
       // ─── Trades / Suppliers ───
       match /trades/{tradeId} {
-        allow read: if isClubMember(clubId) || isSuperAdmin();
-        allow create: if isClubAdmin(clubId) || isSuperAdmin();
-        allow update: if isClubAdmin(clubId) || isSuperAdmin();
+        allow read: if isSignedIn();
+        allow create: if isClubStaff(clubId) || isSuperAdmin();
+        allow update: if isClubStaff(clubId) || isSuperAdmin();
         allow delete: if isClubAdmin(clubId) || isSuperAdmin();
       }
 
@@ -520,10 +524,10 @@ service cloud.firestore {
 
       // ─── Sponsors ───
       match /sponsors/{sponsorId} {
-        allow read: if isClubMember(clubId);
-        allow create: if isClubStaff(clubId);
-        allow update: if isClubStaff(clubId);
-        allow delete: if isClubAdmin(clubId);
+        allow read: if isSignedIn();
+        allow create: if isClubStaff(clubId) || isSuperAdmin();
+        allow update: if isClubStaff(clubId) || isSuperAdmin();
+        allow delete: if isClubAdmin(clubId) || isSuperAdmin();
       }
 
       // ─── Facility Bookings ───

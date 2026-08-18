@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Award, TrendingUp, Eye, MousePointer, Plus, Edit2, Trash2, BarChart3, PieChart, Globe, RefreshCw, Mail, Phone } from 'lucide-react';
+import { Award, TrendingUp, Eye, MousePointer, Plus, Edit2, Trash2, BarChart3, PieChart, Globe, RefreshCw, Mail, Phone, Settings } from 'lucide-react';
 import { useClub } from '../context/ClubContext';
 import { sponsorService } from '../services/sponsorService';
 import DataTable from '../components/DataTable';
 import Modal from '../components/Modal';
-import { doc, updateDoc, setDoc, collection, serverTimestamp } from 'firebase/firestore';
+import { doc, updateDoc, setDoc, deleteDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { db } from '../config/firebase';
 
 const SponsorsPage = () => {
@@ -18,6 +18,8 @@ const SponsorsPage = () => {
   const [isSavingTiers, setIsSavingTiers] = useState(false);
   const [tempTiers, setTempTiers] = useState([]);
   const [syncTrade, setSyncTrade] = useState(false);
+  const [selectedTier, setSelectedTier] = useState('');
+  const [customTierVal, setCustomTierVal] = useState('');
 
   const defaultTiers = ['Gold', 'Silver', 'Bronze'];
   const currentTiers = selectedClub?.sponsorTiers || defaultTiers;
@@ -38,6 +40,24 @@ const SponsorsPage = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleOpenModal = (sponsor = null) => {
+    setEditingSponsor(sponsor);
+    setSyncTrade(!!sponsor?.syncedTradeId);
+    if (sponsor) {
+      if (currentTiers.includes(sponsor.tier)) {
+        setSelectedTier(sponsor.tier);
+        setCustomTierVal('');
+      } else {
+        setSelectedTier('__custom__');
+        setCustomTierVal(sponsor.tier || '');
+      }
+    } else {
+      setSelectedTier(currentTiers[0] || 'Gold');
+      setCustomTierVal('');
+    }
+    setShowModal(true);
   };
 
   const handleOpenTiers = () => {
@@ -74,9 +94,19 @@ const SponsorsPage = () => {
     e.preventDefault();
     if (!selectedClubId) return;
     const formData = new FormData(e.target);
+
+    let tierValue = selectedTier;
+    if (tierValue === '__custom__') {
+      tierValue = customTierVal.trim() || 'Custom';
+      if (tierValue && !currentTiers.includes(tierValue)) {
+        const nextTiers = [...currentTiers, tierValue];
+        updateDoc(doc(db, 'clubs', selectedClubId), { sponsorTiers: nextTiers }).catch(console.error);
+      }
+    }
+
     const sponsorData = {
       name: formData.get('name'),
-      tier: formData.get('tier'),
+      tier: tierValue,
       expiry: formData.get('expiry'),
       website: formData.get('website'),
       phone: formData.get('phone') || '',
@@ -109,6 +139,13 @@ const SponsorsPage = () => {
           });
           syncedTradeId = tradeRef.id;
         }
+      } else if (syncedTradeId) {
+        try {
+          await deleteDoc(doc(db, 'clubs', selectedClubId, 'trades', syncedTradeId));
+        } catch (err) {
+          console.warn('Trade removal warning:', err);
+        }
+        syncedTradeId = null;
       }
 
       const finalSponsorData = {
@@ -230,7 +267,7 @@ const SponsorsPage = () => {
             <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
             <span>Refresh</span>
           </button>
-          <button className="btn btn-primary" onClick={() => { setEditingSponsor(null); setSyncTrade(false); setShowModal(true); }}>
+          <button className="btn btn-primary" onClick={() => handleOpenModal(null)}>
             <Plus size={18} />
             <span>New Sponsorship</span>
           </button>
@@ -279,7 +316,7 @@ const SponsorsPage = () => {
         data={sponsors}
         loading={loading}
         actions={[
-          { label: 'Edit', icon: <Edit2 size={16} />, onClick: (row) => { setEditingSponsor(row); setSyncTrade(!!row.syncedTradeId); setShowModal(true); } },
+          { label: 'Edit', icon: <Edit2 size={16} />, onClick: (row) => handleOpenModal(row) },
           { label: 'Delete', icon: <Trash2 size={16} />, variant: 'danger', onClick: (row) => handleDeleteSponsor(row.id) }
         ]}
       />
@@ -296,12 +333,48 @@ const SponsorsPage = () => {
           </div>
           <div className="form-row">
             <div className="form-group">
-              <label>Sponsorship Tier</label>
-              <select name="tier" className="form-control" defaultValue={editingSponsor?.tier || currentTiers[0]}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                <label style={{ margin: 0 }}>Sponsorship Tier</label>
+                <button 
+                  type="button" 
+                  onClick={handleOpenTiers} 
+                  style={{ 
+                    background: 'none', 
+                    border: 'none', 
+                    color: 'var(--primary)', 
+                    fontSize: '12px', 
+                    fontWeight: '600', 
+                    cursor: 'pointer',
+                    textDecoration: 'underline',
+                    padding: 0
+                  }}
+                >
+                  ⚙️ Change Tier Names
+                </button>
+              </div>
+              <select 
+                name="tier" 
+                className="form-control" 
+                value={selectedTier}
+                onChange={(e) => setSelectedTier(e.target.value)}
+              >
                 {currentTiers.map(tier => (
                   <option key={tier} value={tier}>{tier}</option>
                 ))}
+                <option value="__custom__">+ Add Custom Tier Name...</option>
               </select>
+              {selectedTier === '__custom__' && (
+                <input
+                  type="text"
+                  name="customTier"
+                  className="form-control"
+                  style={{ marginTop: 8 }}
+                  placeholder="Enter Custom Tier Name (e.g. Platinum)"
+                  value={customTierVal}
+                  onChange={(e) => setCustomTierVal(e.target.value)}
+                  required
+                />
+              )}
             </div>
             <div className="form-group">
               <label>Contract Expiry</label>
@@ -322,16 +395,32 @@ const SponsorsPage = () => {
             <label>Website / Landing Page</label>
             <input name="website" type="url" className="form-control" placeholder="https://" defaultValue={editingSponsor?.website} />
           </div>
-          <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, marginBottom: 12 }}>
-            <input 
-              type="checkbox" 
-              id="syncTrade" 
-              checked={syncTrade} 
-              onChange={e => setSyncTrade(e.target.checked)} 
-              style={{ width: '16px', height: '16px', cursor: 'pointer' }}
-            />
-            <label htmlFor="syncTrade" style={{ cursor: 'pointer', margin: 0, fontSize: '14px', fontWeight: '500' }}>Sync as Trade / Preferred Supplier</label>
+
+          <div style={{ 
+            background: 'var(--bg)', 
+            padding: '14px 16px', 
+            borderRadius: '12px', 
+            border: '1px solid var(--border)',
+            marginTop: 16, 
+            marginBottom: 16 
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <input 
+                type="checkbox" 
+                id="syncTrade" 
+                checked={syncTrade} 
+                onChange={e => setSyncTrade(e.target.checked)} 
+                style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: 'var(--primary)' }}
+              />
+              <label htmlFor="syncTrade" style={{ cursor: 'pointer', margin: 0, fontSize: '14px', fontWeight: '700', color: 'var(--text)' }}>
+                Include Sponsor in Trades & Suppliers Section
+              </label>
+            </div>
+            <p style={{ margin: '6px 0 0 28px', fontSize: '12px', color: 'var(--text-secondary)', lineHeight: '1.4' }}>
+              Checking this automatically includes this sponsor in the mobile app's <strong>Trades & Suppliers</strong> directory, allowing club members to view their contact info and sponsorship details.
+            </p>
           </div>
+
           <div className="form-actions">
             <button type="button" className="btn btn-outline" onClick={() => setShowModal(false)}>Cancel</button>
             <button type="submit" className="btn btn-primary" disabled={isSaving}>

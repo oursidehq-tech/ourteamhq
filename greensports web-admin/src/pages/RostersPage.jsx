@@ -36,13 +36,28 @@ export default function RostersPage() {
     if (!selectedClubId) return;
     try {
       const membersSnap = await getDocs(collection(db, 'clubs', selectedClubId, 'members'));
-      setMembers(membersSnap.docs.map(d => ({ id: `user_${d.id}`, name: `(User) ${d.data().displayName || d.data().name || d.id}` })));
+      setMembers(membersSnap.docs.map(d => ({
+        id: `user_${d.id}`,
+        rawId: d.id,
+        type: 'user',
+        name: `👤 ${d.data().displayName || d.data().name || d.id}`
+      })));
 
       const teamsSnap = await getDocs(collection(db, 'clubs', selectedClubId, 'teams'));
-      setTeams(teamsSnap.docs.map(d => ({ id: `team_${d.id}`, name: `(Team) ${d.data().name || d.id}` })));
+      setTeams(teamsSnap.docs.map(d => ({
+        id: `team_${d.id}`,
+        rawId: d.id,
+        type: 'team',
+        name: `👥 ${d.data().name || d.id}`
+      })));
 
       const groupsSnap = await getDocs(collection(db, 'clubs', selectedClubId, 'groups'));
-      setGroups(groupsSnap.docs.map(d => ({ id: `group_${d.id}`, name: `(Group) ${d.data().groupName || d.id}` })));
+      setGroups(groupsSnap.docs.map(d => ({
+        id: `group_${d.id}`,
+        rawId: d.id,
+        type: 'group',
+        name: `🏛️ ${d.data().groupName || d.id}`
+      })));
     } catch (err) {
       console.error('Error fetching club options:', err);
     }
@@ -69,7 +84,11 @@ export default function RostersPage() {
     }
   }, [selectedClubId]);
 
-  const combinedOptions = [...members, ...teams, ...groups];
+  const combinedOptions = [
+    ...(members.length > 0 ? [{ id: 'hdr_users', name: 'Users / Members', isHeader: true }, ...members] : []),
+    ...(teams.length > 0 ? [{ id: 'hdr_teams', name: 'Teams', isHeader: true }, ...teams] : []),
+    ...(groups.length > 0 ? [{ id: 'hdr_groups', name: 'Groups / Committees', isHeader: true }, ...groups] : []),
+  ];
 
   const filtered = rosters.filter(r =>
     r.title?.toLowerCase().includes(search.toLowerCase())
@@ -162,9 +181,23 @@ export default function RostersPage() {
       const recurringRule = buildRecurringRule(form.startDate);
       
       const shiftsWithNames = form.shifts.map(s => {
-        const assignedNames = s.assignedIds.map(id => combinedOptions.find(o => o.id === id)?.name).filter(Boolean);
+        const selectedObjs = (s.assignedIds || []).map(id => combinedOptions.find(o => o.id === id)).filter(Boolean);
+        const assignedNames = selectedObjs.map(o => (o.name || '').replace(/^[👤👥🏛️]\s*/, '')).filter(Boolean);
+        
+        const userIds = selectedObjs.filter(o => o.type === 'user').map(o => o.rawId);
+        const teamIds = selectedObjs.filter(o => o.type === 'team').map(o => o.rawId);
+        const groupIds = selectedObjs.filter(o => o.type === 'group').map(o => o.rawId);
+        const mergedGroupIds = [...teamIds, ...groupIds];
+
         return {
           ...s,
+          assignedIds: s.assignedIds || [],
+          assignedUserIds: userIds,
+          assignedTeamIds: teamIds,
+          assignedGroupIds: mergedGroupIds,
+          assignedUserId: userIds[0] || '',
+          assignedGroupId: mergedGroupIds[0] || null,
+          teamId: teamIds[0] || null,
           filledByName: assignedNames.join(', ') || s.filledByName || '',
         };
       });
