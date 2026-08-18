@@ -10,6 +10,7 @@ service cloud.firestore {
     function isClubMember(clubId) {
       return isSignedIn() && (
         exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid)) ||
+        (exists(/databases/$(database)/documents/clubs/$(clubId)) && get(/databases/$(database)/documents/clubs/$(clubId)).data.createdBy == request.auth.uid) ||
         isClubAdmin(clubId)
       );
     }
@@ -127,36 +128,48 @@ service cloud.firestore {
 
     // Owner = the person who created the club (full control)
     function isClubOwner(clubId) {
+      let isCreator = exists(/databases/$(database)/documents/clubs/$(clubId)) && 
+        get(/databases/$(database)/documents/clubs/$(clubId)).data.createdBy == request.auth.uid;
       let memberExists = exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid));
       let memberDoc = memberExists ? get(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid)) : null;
       
       let userExists = exists(/databases/$(database)/documents/users/$(request.auth.uid));
       let userDoc = userExists ? get(/databases/$(database)/documents/users/$(request.auth.uid)) : null;
 
-      return isSignedIn() && hasRole(
-        memberDoc, userDoc, clubId, 
-        ['Owner', 'owner'], 
-        ['clubowner', 'clubOwner', 'owner', 'Owner']
+      return isSignedIn() && (
+        isCreator ||
+        hasRole(
+          memberDoc, userDoc, clubId, 
+          ['Owner', 'owner'], 
+          ['clubowner', 'clubOwner', 'owner', 'Owner']
+        )
       );
     }
 
     // Admin = appointed by Owner (management access)
     function isClubAdmin(clubId) {
+      let isCreator = exists(/databases/$(database)/documents/clubs/$(clubId)) && 
+        get(/databases/$(database)/documents/clubs/$(clubId)).data.createdBy == request.auth.uid;
       let memberExists = exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid));
       let memberDoc = memberExists ? get(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid)) : null;
 
       let userExists = exists(/databases/$(database)/documents/users/$(request.auth.uid));
       let userDoc = userExists ? get(/databases/$(database)/documents/users/$(request.auth.uid)) : null;
 
-      return isSignedIn() && hasRole(
-        memberDoc, userDoc, clubId, 
-        ['Owner', 'owner', 'Admin', 'admin'], 
-        ['clubowner', 'clubOwner', 'owner', 'Owner', 'clubadmin', 'clubAdmin', 'admin', 'Admin']
+      return isSignedIn() && (
+        isCreator ||
+        hasRole(
+          memberDoc, userDoc, clubId, 
+          ['Owner', 'owner', 'Admin', 'admin'], 
+          ['clubowner', 'clubOwner', 'owner', 'Owner', 'clubadmin', 'clubAdmin', 'admin', 'Admin']
+        )
       );
     }
 
     // Staff = any role above Player/Parent in the club hierarchy
     function isClubStaff(clubId) {
+      let isCreator = exists(/databases/$(database)/documents/clubs/$(clubId)) && 
+        get(/databases/$(database)/documents/clubs/$(clubId)).data.createdBy == request.auth.uid;
       let memberExists = exists(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid));
       let memberDoc = memberExists ? get(/databases/$(database)/documents/clubs/$(clubId)/members/$(request.auth.uid)) : null;
 
@@ -165,10 +178,13 @@ service cloud.firestore {
 
       let staffRoles = ['Owner', 'owner', 'Admin', 'admin', 'Coach', 'coach', 'Manager', 'manager', 'Executive', 'executive', 'Committee', 'committee', 'President', 'president', 'Vice President', 'vice president', 'Secretary', 'secretary', 'Treasurer', 'treasurer', 'Registrar', 'registrar', 'Coordinator', 'coordinator', 'Volunteer', 'volunteer'];
       
-      return isSignedIn() && hasRole(
-        memberDoc, userDoc, clubId, 
-        staffRoles, 
-        ['clubowner', 'clubOwner', 'owner', 'Owner', 'clubadmin', 'clubAdmin', 'admin', 'Admin']
+      return isSignedIn() && (
+        isCreator ||
+        hasRole(
+          memberDoc, userDoc, clubId, 
+          staffRoles, 
+          ['clubowner', 'clubOwner', 'owner', 'Owner', 'clubadmin', 'clubAdmin', 'admin', 'Admin']
+        )
       );
     }
 
