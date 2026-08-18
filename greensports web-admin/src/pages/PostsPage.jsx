@@ -69,8 +69,7 @@ export default function PostsPage() {
       visibility: 'Club-Only',
       type: 'update',
       authorName: 'Admin',
-      teamIds: [],
-      groupIds: [],
+      visibilityTargetIds: [],
     });
     setModal('add');
   };
@@ -81,6 +80,9 @@ export default function PostsPage() {
     try {
       const ref = doc(col());
 
+      const teamIds = (form.visibilityTargetIds || []).filter(id => id.startsWith('team_')).map(id => id.replace('team_', ''));
+      const groupIds = (form.visibilityTargetIds || []).filter(id => id.startsWith('group_')).map(id => id.replace('group_', ''));
+
       await setDoc(ref, {
         content: form.content.trim(),
         visibility: form.visibility,
@@ -89,8 +91,8 @@ export default function PostsPage() {
         authorId: 'admin',
         authorName: form.authorName || 'Admin',
         imageUrl: '',
-        teamIds: form.teamIds || [],
-        groupIds: form.groupIds || [],
+        teamIds,
+        groupIds,
         createdAt: serverTimestamp(),
       });
       await fetch();
@@ -186,19 +188,17 @@ export default function PostsPage() {
             </select>
           </div>
           <div className="form-group">
-            <label style={{ display: 'block', marginBottom: 6 }}>Link to Teams</label>
+            <label style={{ display: 'block', marginBottom: 6 }}>Visibility Targets</label>
             <MultiSelect
-              options={teams}
-              selectedValues={form.teamIds || []}
-              onChange={vals => setForm({ ...form, teamIds: vals })}
-              placeholder="Select teams..."
-            />
-            <label style={{ display: 'block', marginTop: 12, marginBottom: 6 }}>Link to Groups</label>
-            <MultiSelect
-              options={groups}
-              selectedValues={form.groupIds || []}
-              onChange={vals => setForm({ ...form, groupIds: vals })}
-              placeholder="Select groups..."
+              options={[
+                { id: 'header_teams', name: 'Teams', isHeader: true },
+                ...teams.map(t => ({ id: `team_${t.id}`, name: t.name })),
+                { id: 'header_groups', name: 'Groups', isHeader: true },
+                ...groups.map(g => ({ id: `group_${g.id}`, name: g.groupName || g.name })),
+              ]}
+              selectedValues={form.visibilityTargetIds || []}
+              onChange={vals => setForm({ ...form, visibilityTargetIds: vals })}
+              placeholder="Select teams or groups..."
             />
           </div>
         </div>

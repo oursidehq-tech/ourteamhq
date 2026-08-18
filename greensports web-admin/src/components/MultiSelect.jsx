@@ -35,7 +35,7 @@ export default function MultiSelect({
 
   const handleSelectAll = () => {
     const filteredOptions = options.filter(opt =>
-      String(opt[labelKey] || '').toLowerCase().includes(search.toLowerCase())
+      !opt.isHeader && String(opt[labelKey] || '').toLowerCase().includes(search.toLowerCase())
     );
     const filteredVals = filteredOptions.map(opt => opt[valueKey]);
     
@@ -46,7 +46,7 @@ export default function MultiSelect({
 
   const handleDeselectAll = () => {
     const filteredOptions = options.filter(opt =>
-      String(opt[labelKey] || '').toLowerCase().includes(search.toLowerCase())
+      !opt.isHeader && String(opt[labelKey] || '').toLowerCase().includes(search.toLowerCase())
     );
     const filteredVals = filteredOptions.map(opt => opt[valueKey]);
     
@@ -55,9 +55,19 @@ export default function MultiSelect({
     onChange(newSelection);
   };
 
-  const filteredOptions = options.filter(opt =>
-    String(opt[labelKey] || '').toLowerCase().includes(search.toLowerCase())
-  );
+  const filteredOptions = options.filter(opt => {
+    if (opt.isHeader) return true; // Always keep headers, or we could filter them out if no children match. For simplicity, keep them if searching is empty or let user scroll. Actually, better:
+    return String(opt[labelKey] || '').toLowerCase().includes(search.toLowerCase());
+  });
+
+  // Remove empty headers (optional optimization)
+  const displayOptions = filteredOptions.filter((opt, index, arr) => {
+    if (!opt.isHeader) return true;
+    // Check if next item is also a header or it's the last item
+    const nextOpt = arr[index + 1];
+    if (!nextOpt || nextOpt.isHeader) return false;
+    return true;
+  });
 
   // Render trigger button text
   const selectedObjects = options.filter(opt => selectedValues.includes(opt[valueKey]));
@@ -181,7 +191,7 @@ export default function MultiSelect({
             flexDirection: 'column',
             gap: '2px'
           }}>
-            {filteredOptions.length === 0 ? (
+            {displayOptions.length === 0 ? (
               <div style={{
                 padding: '12px 10px',
                 textAlign: 'center',
@@ -191,7 +201,23 @@ export default function MultiSelect({
                 No options found
               </div>
             ) : (
-              filteredOptions.map(opt => {
+              displayOptions.map((opt, i) => {
+                if (opt.isHeader) {
+                  return (
+                    <div key={`header-${i}`} style={{
+                      padding: '10px 8px 4px 8px',
+                      fontSize: '11px',
+                      fontWeight: 600,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.5px',
+                      color: 'var(--text-secondary)',
+                      marginTop: i > 0 ? '8px' : '0'
+                    }}>
+                      {opt[labelKey]}
+                    </div>
+                  );
+                }
+
                 const isSel = selectedValues.includes(opt[valueKey]);
                 return (
                   <div

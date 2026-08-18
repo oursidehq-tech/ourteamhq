@@ -473,16 +473,16 @@ service cloud.firestore {
       // ─── League Competitions ───
       match /leagueCompetitions/{competitionId} {
         allow read: if isClubMember(clubId) || isSuperAdmin();
-        allow create: if isClubAdmin(clubId) || isSuperAdmin();
-        allow update: if isClubAdmin(clubId) || isSuperAdmin();
+        allow create: if isClubStaff(clubId) || isSuperAdmin();
+        allow update: if isClubStaff(clubId) || isSuperAdmin();
         allow delete: if isClubAdmin(clubId) || isSuperAdmin();
       }
 
       // ─── League Fixtures ───
       match /leagueFixtures/{fixtureId} {
         allow read: if isClubMember(clubId) || isSuperAdmin();
-        allow create: if isClubAdmin(clubId) || isSuperAdmin();
-        allow update: if isClubAdmin(clubId) || isSuperAdmin();
+        allow create: if isClubStaff(clubId) || isSuperAdmin();
+        allow update: if isClubStaff(clubId) || isSuperAdmin();
         allow delete: if isClubAdmin(clubId) || isSuperAdmin();
       }
 
@@ -516,6 +516,14 @@ service cloud.firestore {
         allow create: if isClubMember(clubId) && request.resource.data.requesterId == request.auth.uid;
         allow update: if isClubStaff(clubId);
         allow delete: if isClubAdmin(clubId);
+      }
+
+      // ─── Bookings ───
+      match /bookings/{bookingId} {
+        allow read: if isClubMember(clubId) || isSuperAdmin();
+        allow create: if isClubStaff(clubId) || isSuperAdmin();
+        allow update: if isClubStaff(clubId) || isSuperAdmin();
+        allow delete: if isClubAdmin(clubId) || isSuperAdmin();
       }
 
       // ─── Role Change Requests ───
@@ -552,6 +560,14 @@ service cloud.firestore {
 
       // ─── Team Compliance ───
       match /teamCompliance/{complianceId} {
+        allow read: if isClubMember(clubId) || isSuperAdmin();
+        allow create: if isClubStaff(clubId) || isSuperAdmin();
+        allow update: if isClubStaff(clubId) || isSuperAdmin();
+        allow delete: if isClubAdmin(clubId) || isSuperAdmin();
+      }
+
+      // ─── Compliance Forms ───
+      match /complianceForms/{formId} {
         allow read: if isClubMember(clubId) || isSuperAdmin();
         allow create: if isClubStaff(clubId) || isSuperAdmin();
         allow update: if isClubStaff(clubId) || isSuperAdmin();

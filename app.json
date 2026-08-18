@@ -39,7 +39,16 @@
     },
     "plugins": [
       "expo-font",
-      "expo-updates"
+      "expo-updates",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "compileSdkVersion": 36,
+            "targetSdkVersion": 36
+          }
+        }
+      ]
     ],
     "extra": {
       "eas": {

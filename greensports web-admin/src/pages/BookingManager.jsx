@@ -13,6 +13,7 @@ const BookingManager = () => {
   const [search, setSearch] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [statusFilter, setStatusFilter] = useState('All');
   const [form, setForm] = useState({
     facility: 'Main Pitch',
     team: '',
@@ -44,10 +45,15 @@ const BookingManager = () => {
     fetchBookings();
   }, [selectedClubId]);
 
-  const filteredBookings = bookings.filter(b => 
-    (b.facility || '').toLowerCase().includes(search.toLowerCase()) ||
-    (b.team || '').toLowerCase().includes(search.toLowerCase())
-  );
+  const filteredBookings = bookings.filter(b => {
+    const matchesSearch = (b.facility || '').toLowerCase().includes(search.toLowerCase()) ||
+                          (b.team || '').toLowerCase().includes(search.toLowerCase());
+    
+    if (statusFilter === 'All') return matchesSearch;
+    if (statusFilter === 'Upcoming') return matchesSearch && (b.date && new Date(b.date) >= new Date());
+    if (statusFilter === 'Pending') return matchesSearch && b.status === 'Pending';
+    return matchesSearch;
+  });
 
   const handleStatusChange = async (id, status) => {
     try {
@@ -156,7 +162,11 @@ const BookingManager = () => {
       </div>
 
       <div className="stats-marquee">
-        <div className="stats-marquee-card">
+        <div 
+          className="stats-marquee-card" 
+          style={{ cursor: 'pointer', border: statusFilter === 'Upcoming' ? '2px solid var(--primary)' : '1px solid var(--border)' }}
+          onClick={() => setStatusFilter(statusFilter === 'Upcoming' ? 'All' : 'Upcoming')}
+        >
           <div className="sm-card-top">
             <div className="sm-icon" style={{ background: 'rgba(99, 102, 241, 0.1)', color: '#6366F1' }}>
               <Calendar size={20} />
@@ -167,7 +177,11 @@ const BookingManager = () => {
             <p>Upcoming Bookings</p>
           </div>
         </div>
-        <div className="stats-marquee-card">
+        <div 
+          className="stats-marquee-card"
+          style={{ cursor: 'pointer', border: statusFilter === 'All' ? '2px solid var(--primary)' : '1px solid var(--border)' }}
+          onClick={() => setStatusFilter('All')}
+        >
           <div className="sm-card-top">
             <div className="sm-icon" style={{ background: 'rgba(16, 185, 129, 0.1)', color: '#10B981' }}>
               <Clock size={20} />
@@ -178,7 +192,11 @@ const BookingManager = () => {
             <p>Pitch Utilization</p>
           </div>
         </div>
-        <div className="stats-marquee-card">
+        <div 
+          className="stats-marquee-card"
+          style={{ cursor: 'pointer', border: statusFilter === 'Pending' ? '2px solid var(--primary)' : '1px solid var(--border)' }}
+          onClick={() => setStatusFilter(statusFilter === 'Pending' ? 'All' : 'Pending')}
+        >
           <div className="sm-card-top">
             <div className="sm-icon" style={{ background: 'rgba(245, 158, 11, 0.1)', color: '#F59E0B' }}>
               <Filter size={20} />
