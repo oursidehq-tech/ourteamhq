@@ -10,6 +10,7 @@ import {
   TextInput,
   ActivityIndicator,
   Image,
+  Platform,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -183,9 +184,11 @@ export default function ProductManagerScreen({ navigation }) {
         shopTaxEnabled: !!shopTaxEnabled,
         shopTaxRate: normalizedPercent / 100,
       });
-      Alert.alert("Saved", "Shop tax settings updated.");
+      if (Platform.OS === "web") alert("Shop tax settings updated.");
+      else Alert.alert("Saved", "Shop tax settings updated.");
     } catch {
-      Alert.alert("Error", "Failed to update shop settings.");
+      if (Platform.OS === "web") alert("Failed to update shop settings.");
+      else Alert.alert("Error", "Failed to update shop settings.");
     } finally {
       setSavingShopSettings(false);
     }
@@ -194,13 +197,15 @@ export default function ProductManagerScreen({ navigation }) {
   const handleSave = async () => {
     if (!activeClubId || !selected?.id) return;
     if (!name.trim()) {
-      Alert.alert("Required", "Product name is required.");
+      if (Platform.OS === "web") alert("Product name is required.");
+      else Alert.alert("Required", "Product name is required.");
       return;
     }
 
     const parsedPrice = parseFloat(price);
     if (!Number.isFinite(parsedPrice) || parsedPrice < 0) {
-      Alert.alert("Invalid Price", "Please enter a valid price.");
+      if (Platform.OS === "web") alert("Please enter a valid price.");
+      else Alert.alert("Invalid Price", "Please enter a valid price.");
       return;
     }
 
@@ -260,7 +265,8 @@ export default function ProductManagerScreen({ navigation }) {
       });
       setSelected(null);
     } catch {
-      Alert.alert("Error", "Failed to save product changes.");
+      if (Platform.OS === "web") alert("Failed to save product changes.");
+      else Alert.alert("Error", "Failed to save product changes.");
     } finally {
       setSaving(false);
     }
@@ -268,6 +274,24 @@ export default function ProductManagerScreen({ navigation }) {
 
   const handleDeleteSelected = () => {
     if (!activeClubId || !selected?.id || deleting) return;
+
+    if (Platform.OS === "web") {
+      const confirmed = window.confirm("This will permanently delete this product. This action cannot be undone.");
+      if (confirmed) {
+        (async () => {
+          try {
+            setDeleting(true);
+            await deleteProduct(activeClubId, selected.id);
+            setSelected(null);
+          } catch {
+            alert("Failed to delete product.");
+          } finally {
+            setDeleting(false);
+          }
+        })();
+      }
+      return;
+    }
 
     Alert.alert(
       "Delete Product",

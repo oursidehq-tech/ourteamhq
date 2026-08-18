@@ -9,6 +9,7 @@ import {
   Modal,
   Pressable,
   ActivityIndicator,
+  Platform,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
@@ -213,10 +214,14 @@ export default function TasksScreen({ route, navigation }) {
     if (!task) return;
 
     if (!canUpdateTask(task)) {
-      Alert.alert(
-        "Not allowed",
-        "Only the assignee or an admin can update this task.",
-      );
+      if (Platform.OS === "web") {
+        alert("Not allowed: Only the assignee or an admin can update this task.");
+      } else {
+        Alert.alert(
+          "Not allowed",
+          "Only the assignee or an admin can update this task.",
+        );
+      }
       return;
     }
 
@@ -236,7 +241,8 @@ export default function TasksScreen({ route, navigation }) {
         );
       }
     } catch {
-      Alert.alert("Error", "Unable to update task status.");
+      if (Platform.OS === "web") alert("Unable to update task status.");
+      else Alert.alert("Error", "Unable to update task status.");
     }
   };
 
@@ -265,6 +271,23 @@ export default function TasksScreen({ route, navigation }) {
 
   const handleTemplateDelete = () => {
     if (!selectedTemplate) return;
+    if (Platform.OS === "web") {
+      const confirmed = window.confirm("Are you sure you want to delete this template? This cannot be undone.");
+      if (confirmed) {
+        (async () => {
+          setShowTemplateMenu(false);
+          try {
+            await deleteTaskTemplate(activeClubId, selectedTemplate.id);
+            setSelectedTemplate(null);
+            await refreshTemplates();
+            alert("Template deleted successfully.");
+          } catch (error) {
+            alert("Failed to delete template.");
+          }
+        })();
+      }
+      return;
+    }
     Alert.alert(
       "Delete Template",
       "Are you sure you want to delete this template? This cannot be undone.",

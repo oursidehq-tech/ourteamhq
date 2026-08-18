@@ -75,24 +75,33 @@ export default function SettingsScreen({ navigation }) {
       }
       await Linking.openSettings();
     } catch {
-      Alert.alert(
-        "Notifications",
-        "Could not open settings. Please open your device settings manually.",
-      );
+      if (Platform.OS === "web") {
+        alert("Notifications: Please enable notifications in your web browser settings.");
+      } else {
+        Alert.alert(
+          "Notifications",
+          "Could not open settings. Please open your device settings manually.",
+        );
+      }
     }
   };
 
   const showThemeInfo = () => {
-    Alert.alert(
-      "Dark Mode",
-      "Dark mode preference is saved. Full app-wide dark theme rollout can be connected to this setting next.",
-    );
+    if (Platform.OS === "web") {
+      alert("Dark Mode\nDark mode preference is saved locally.");
+    } else {
+      Alert.alert(
+        "Dark Mode",
+        "Dark mode preference is saved. Full app-wide dark theme rollout can be connected to this setting next.",
+      );
+    }
   };
 
   const handleJoinClub = async () => {
     const code = (inviteCode || "").replace(/\D/g, "").slice(0, 6);
     if (code.length !== 6) {
-      Alert.alert("Invalid Code", "Please enter a valid 6-digit invite code.");
+      if (Platform.OS === "web") alert("Please enter a valid 6-digit invite code.");
+      else Alert.alert("Invalid Code", "Please enter a valid 6-digit invite code.");
       return;
     }
     if (!user?.uid) return;
@@ -105,12 +114,14 @@ export default function SettingsScreen({ navigation }) {
     try {
       const club = await getClubByInviteCode(code);
       if (!club) {
-        Alert.alert("Invalid Code", "No club found for this invite code.");
+        if (Platform.OS === "web") alert("No club found for this invite code.");
+        else Alert.alert("Invalid Code", "No club found for this invite code.");
         return;
       }
 
       if (existing.some((m) => m.clubId === club.id)) {
-        Alert.alert("Already Joined", "You are already a member of this club.");
+        if (Platform.OS === "web") alert("You are already a member of this club.");
+        else Alert.alert("Already Joined", "You are already a member of this club.");
         return;
       }
 
@@ -125,12 +136,14 @@ export default function SettingsScreen({ navigation }) {
 
       await refreshProfile();
       setInviteCode("");
-      Alert.alert(
+      if (Platform.OS === "web") alert(`You joined ${club.name || "the club"} successfully.`);
+      else Alert.alert(
         "Joined",
         `You joined ${club.name || "the club"} successfully.`,
       );
     } catch (error) {
-      Alert.alert(
+      if (Platform.OS === "web") alert(error?.message || "Unable to join club right now. Please try again.");
+      else Alert.alert(
         "Join Failed",
         error?.message || "Unable to join club right now. Please try again.",
       );

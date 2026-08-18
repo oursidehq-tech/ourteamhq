@@ -7,6 +7,7 @@ import {
   Alert,
   Modal,
   Pressable,
+  Platform,
 } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -134,10 +135,26 @@ export default function MoreScreen({ navigation, route }) {
   );
 
   const handleAlert = (title, message) => {
-    Alert.alert(title, message || "This feature is coming soon.");
+    if (Platform.OS === "web") {
+      alert(`${title}\n${message || "This feature is coming soon."}`);
+    } else {
+      Alert.alert(title, message || "This feature is coming soon.");
+    }
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    if (Platform.OS === "web") {
+      const confirmed = window.confirm("Are you sure you want to sign out?");
+      if (confirmed) {
+        try {
+          await logOut();
+        } catch (e) {
+          alert("Failed to sign out: " + (e?.message || e));
+        }
+      }
+      return;
+    }
+
     Alert.alert("Sign Out", "Are you sure you want to sign out?", [
       { text: "Cancel", style: "cancel" },
       {
@@ -156,7 +173,11 @@ export default function MoreScreen({ navigation, route }) {
 
   const handleSwitchClub = () => {
     if (allClubs.length <= 1) {
-      Alert.alert("Switch Club", "You are only a member of one club.");
+      if (Platform.OS === "web") {
+        alert("You are only a member of one club.");
+      } else {
+        Alert.alert("Switch Club", "You are only a member of one club.");
+      }
       return;
     }
     setSwitchModalOpen(true);
@@ -173,6 +194,24 @@ export default function MoreScreen({ navigation, route }) {
 
     try {
       const code = await ensureClubInviteCode(activeClubId);
+      if (Platform.OS === "web") {
+        const msg = `Club Join Code: ${code}\n\nShare this 6-digit code with players, coaches, and parents.` +
+          (isOwner ? "\n\nPress OK to regenerate a new code, or Cancel to close." : "");
+        if (isOwner) {
+          const wantsRegen = window.confirm(msg);
+          if (wantsRegen) {
+            try {
+              const newCode = await regenerateClubInviteCode(activeClubId);
+              alert(`Your new 6-digit code is: ${newCode}`);
+            } catch {
+              alert("Could not regenerate code right now.");
+            }
+          }
+        } else {
+          alert(msg);
+        }
+        return;
+      }
       Alert.alert(
         "Club Join Code",
         `Share this 6-digit code with players, coaches, and parents:\n\n${code}`,
@@ -202,7 +241,8 @@ export default function MoreScreen({ navigation, route }) {
         ].filter(Boolean),
       );
     } catch {
-      Alert.alert("Error", "Could not load club join code right now.");
+      if (Platform.OS === "web") alert("Could not load club join code right now.");
+      else Alert.alert("Error", "Could not load club join code right now.");
     }
   };
 

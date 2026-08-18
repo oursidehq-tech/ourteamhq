@@ -7,6 +7,7 @@ import {
   TextInput,
   Alert,
   ActivityIndicator,
+  Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import * as ImagePicker from "expo-image-picker";
@@ -91,7 +92,8 @@ export default function ProfileScreen({ navigation }) {
 
   const handlePickAvatar = async () => {
     if (!user?.uid) {
-      Alert.alert("Error", "You need to be signed in to update profile image.");
+      if (Platform.OS === "web") alert("You need to be signed in to update profile image.");
+      else Alert.alert("Error", "You need to be signed in to update profile image.");
       return;
     }
 
@@ -108,7 +110,8 @@ export default function ProfileScreen({ navigation }) {
     try {
       const imageUrl = await uploadAvatar(user.uid, picked.assets[0].uri);
       if (!imageUrl) {
-        Alert.alert(
+        if (Platform.OS === "web") alert("Please configure Cloudinary credentials in .env to upload profile images.");
+        else Alert.alert(
           "Upload Unavailable",
           "Please configure Cloudinary credentials in .env to upload profile images.",
         );
@@ -121,9 +124,11 @@ export default function ProfileScreen({ navigation }) {
         avatarOwnerName: profile?.displayName || profile?.email || "User",
       });
       await refreshProfile();
-      Alert.alert("Updated", "Profile image updated successfully.");
+      if (Platform.OS === "web") alert("Profile image updated successfully.");
+      else Alert.alert("Updated", "Profile image updated successfully.");
     } catch (error) {
-      Alert.alert("Upload Failed", error?.message || "Could not update image.");
+      if (Platform.OS === "web") alert("Upload Failed: " + (error?.message || "Could not update image."));
+      else Alert.alert("Upload Failed", error?.message || "Could not update image.");
     } finally {
       setUploadingAvatar(false);
     }
@@ -134,11 +139,13 @@ export default function ProfileScreen({ navigation }) {
     const trimmedPhone = (phone || "").trim();
 
     if (!trimmedName) {
-      Alert.alert("Required", "Display name is required.");
+      if (Platform.OS === "web") alert("Display name is required.");
+      else Alert.alert("Required", "Display name is required.");
       return;
     }
     if (!user?.uid) {
-      Alert.alert("Error", "You need to be signed in.");
+      if (Platform.OS === "web") alert("You need to be signed in.");
+      else Alert.alert("Error", "You need to be signed in.");
       return;
     }
 
@@ -149,9 +156,11 @@ export default function ProfileScreen({ navigation }) {
         phone: trimmedPhone,
       });
       await refreshProfile();
-      Alert.alert("Saved", "Profile updated successfully.");
+      if (Platform.OS === "web") alert("Profile updated successfully.");
+      else Alert.alert("Saved", "Profile updated successfully.");
     } catch (error) {
-      Alert.alert("Error", error?.message || "Failed to update profile.");
+      if (Platform.OS === "web") alert("Error: " + (error?.message || "Failed to update profile."));
+      else Alert.alert("Error", error?.message || "Failed to update profile.");
     } finally {
       setSaving(false);
     }
