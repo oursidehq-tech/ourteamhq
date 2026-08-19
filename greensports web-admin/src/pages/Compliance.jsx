@@ -66,7 +66,7 @@ const Compliance = () => {
   const handleStatusChange = async (id, newStatus, notes = '') => {
     setIsUpdating(true);
     try {
-      await complianceService.updateComplianceStatus(id, newStatus, notes);
+      await complianceService.updateComplianceStatus(selectedClubId, id, newStatus, notes);
       setShowModal(false);
       loadCompliance();
     } catch (error) {

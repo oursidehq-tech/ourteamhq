@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { collection, doc, getDocs, setDoc, updateDoc, deleteDoc, serverTimestamp, orderBy, query } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { db, storage } from '../config/firebase';
+import { db } from '../config/firebase';
+import { storageService } from '../services/storageService';
 import { useClub } from '../context/ClubContext';
 import Modal from '../components/Modal';
 import { Search, Plus, Edit2, Trash2, Image as ImageIcon, Upload, Globe, Lock, Info, Ruler } from 'lucide-react';
@@ -18,26 +18,23 @@ export default function ProductsPage() {
 
   const col = () => collection(db, 'clubs', selectedClubId, 'products');
 
-  const fetch = async () => {
+  const fetchProducts = async () => {
     if (!selectedClubId) return;
     try {
-      const snap = await getDocs(query(col(), orderBy('createdAt', 'desc')));
+      const q = query(col(), orderBy('createdAt', 'desc'));
+      const snap = await getDocs(q);
       setProducts(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-    } catch (err) {
-      console.error("Fetch failed, falling back:", err);
-      const snap = await getDocs(col());
-      setProducts(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    } catch {
+      try {
+        const snap = await getDocs(col());
+        setProducts(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      } catch (err) {
+        console.error('Error fetching products:', err);
+      }
     }
   };
 
-  useEffect(() => {
-    fetch();
-  }, [selectedClubId]);
-
-  const filtered = products.filter(p =>
-    p.name?.toLowerCase().includes(search.toLowerCase()) ||
-    p.category?.toLowerCase().includes(search.toLowerCase())
-  );
+  useEffect(() => { fetchProducts(); }, [selectedClubId]);
 
   const parseVariants = (rawInput, fallbackStock = -1) => {
     const tokens = (rawInput || '')

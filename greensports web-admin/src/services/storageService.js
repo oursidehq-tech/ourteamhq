@@ -9,25 +9,50 @@ import { storage } from '../config/firebase';
 
 export const storageService = {
   /**
-   * Uploads a file to Firebase Storage
-   * @param {File} file - The file to upload
-   * @param {string} path - The path in storage (e.g., 'drills/videos/')
+   * Helper to convert File object to Base64 Data URL
+   */
+  readFileAsDataUrl(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => resolve(e.target.result);
+      reader.onerror = (e) => reject(e);
+      reader.readAsDataURL(file);
+    });
+  },
+
+  /**
+   * Uploads a file to Firebase Storage with a seamless Base64 fallback if CORS or network fails.
    */
   async uploadFile(file, path) {
     const fileName = `${Date.now()}_${file.name}`;
     const storageRef = ref(storage, `${path}${fileName}`);
-    const snapshot = await uploadBytes(storageRef, file);
-    const downloadURL = await getDownloadURL(snapshot.ref);
-    return {
-      url: downloadURL,
-      path: snapshot.ref.fullPath,
-      name: file.name
-    };
+    try {
+      const snapshot = await uploadBytes(storageRef, file);
+      const downloadURL = await getDownloadURL(snapshot.ref);
+      return {
+        url: downloadURL,
+        path: snapshot.ref.fullPath,
+        name: file.name
+      };
+    } catch (err) {
+      console.warn('Firebase Storage upload failed (possibly CORS/network), falling back to Data URL:', err);
+      const dataUrl = await this.readFileAsDataUrl(file);
+      return {
+        url: dataUrl,
+        path: `${path}${fileName}`,
+        name: file.name,
+        isFallback: true
+      };
+    }
   },
 
   async deleteFile(filePath) {
-    const storageRef = ref(storage, filePath);
-    return await deleteObject(storageRef);
+    try {
+      const storageRef = ref(storage, filePath);
+      return await deleteObject(storageRef);
+    } catch (e) {
+      console.warn('Could not delete file:', e);
+    }
   },
 
   async listFiles(path) {

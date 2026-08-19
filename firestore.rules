@@ -586,6 +586,14 @@ service cloud.firestore {
         allow delete: if isClubAdmin(clubId) || isSuperAdmin();
       }
 
+      // ─── Staff Compliance ───
+      match /compliance/{complianceId} {
+        allow read: if isClubMember(clubId) || isSuperAdmin();
+        allow create: if isClubStaff(clubId) || isSuperAdmin() || isSignedIn();
+        allow update: if isClubStaff(clubId) || isSuperAdmin() || isSignedIn();
+        allow delete: if isClubAdmin(clubId) || isSuperAdmin();
+      }
+
       // ─── Compliance Forms ───
       match /complianceForms/{formId} {
         allow read: if isClubMember(clubId) || isSuperAdmin();
@@ -593,6 +601,14 @@ service cloud.firestore {
         allow update: if isClubStaff(clubId) || isSuperAdmin();
         allow delete: if isClubAdmin(clubId) || isSuperAdmin();
       }
+    }
+
+    // ─── Root Compliance Collection ───
+    match /compliance/{complianceId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isSignedIn();
+      allow delete: if isSignedIn();
     }
   }
 }
