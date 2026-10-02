@@ -4,13 +4,14 @@ import { db } from '../config/firebase';
 import { storageService } from '../services/storageService';
 import { useClub } from '../context/ClubContext';
 import Modal from '../components/Modal';
-import { Search, Plus, Edit2, Trash2, Image as ImageIcon, Upload, Globe, Lock, Info, Ruler } from 'lucide-react';
+import { Search, Plus, Edit2, Trash2, Image as ImageIcon, Upload, Globe, Lock, Info, Ruler, Eye } from 'lucide-react';
 
 export default function ProductsPage() {
   const { selectedClubId } = useClub();
   const [products, setProducts] = useState([]);
   const [search, setSearch] = useState('');
   const [modal, setModal] = useState(null);
+  const [viewingProduct, setViewingProduct] = useState(null);
   const [form, setForm] = useState({});
   const [saving, setSaving] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
@@ -35,6 +36,12 @@ export default function ProductsPage() {
   };
 
   useEffect(() => { fetchProducts(); }, [selectedClubId]);
+
+  const filtered = products.filter(p =>
+    (p.name || '').toLowerCase().includes(search.toLowerCase()) ||
+    (p.category || '').toLowerCase().includes(search.toLowerCase()) ||
+    (p.description || '').toLowerCase().includes(search.toLowerCase())
+  );
 
   const parseVariants = (rawInput, fallbackStock = -1) => {
     const tokens = (rawInput || '')
@@ -109,9 +116,8 @@ export default function ProductsPage() {
     try {
       const folder = type === 'product' ? 'products' : 'sizeguides';
       const prefix = type === 'product' ? 'prod_' : 'guide_';
-      const storageRef = ref(storage, `clubs/${selectedClubId}/${folder}/${prefix}${Date.now()}_${file.name}`);
-      await uploadBytes(storageRef, file);
-      const url = await getDownloadURL(storageRef);
+      const res = await storageService.uploadFile(file, `clubs/${selectedClubId}/${folder}/${prefix}`);
+      const url = res.url;
 
       if (type === 'product') {
         setForm(prev => ({ ...prev, imageUrl: url }));
@@ -208,7 +214,13 @@ export default function ProductsPage() {
             {filtered.length === 0 ? (
               <tr><td colSpan={8} className="table-empty">No products found</td></tr>
             ) : filtered.map(p => (
-              <tr key={p.id}>
+              <tr 
+                key={p.id} 
+                className="clickable-row"
+                onClick={(e) => {
+                  if (!e.target.closest('button')) setViewingProduct(p);
+                }}
+              >
                 <td>
                   <div className="product-thumb">
                     {p.imageUrl ? <img src={p.imageUrl} alt={p.name} /> : <ImageIcon size={20} className="text-muted" />}
@@ -247,8 +259,9 @@ export default function ProductsPage() {
                 <td><span className={`badge ${p.inStock !== false ? 'badge-success' : 'badge-danger'}`}>{p.inStock !== false ? 'In Stock' : 'Out of Stock'}</span></td>
                 <td>
                   <div className="flex gap-sm">
-                    <button className="btn-icon" onClick={() => openEdit(p)}><Edit2 size={15} /></button>
-                    <button className="btn-icon danger" onClick={() => handleDelete(p)}><Trash2 size={15} /></button>
+                    <button className="btn-icon" onClick={(e) => { e.stopPropagation(); setViewingProduct(p); }} title="View Product"><Eye size={15} /></button>
+                    <button className="btn-icon" onClick={(e) => { e.stopPropagation(); openEdit(p); }} title="Edit Product"><Edit2 size={15} /></button>
+                    <button className="btn-icon danger" onClick={(e) => { e.stopPropagation(); handleDelete(p); }} title="Delete Product"><Trash2 size={15} /></button>
                   </div>
                 </td>
               </tr>
@@ -383,6 +396,78 @@ export default function ProductsPage() {
           </div>
 
         </div>
+      </Modal>
+
+      {/* View Product Modal */}
+      <Modal open={!!viewingProduct} onClose={() => setViewingProduct(null)} title="Product Details">
+        {viewingProduct && (
+          <div>
+            <div style={{ display: 'flex', gap: 20, marginBottom: 20, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+              <div style={{ width: 140, height: 140, borderRadius: 12, border: '1px solid var(--border)', background: '#F8FAFC', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+                {viewingProduct.imageUrl ? (
+                  <img src={viewingProduct.imageUrl} alt={viewingProduct.name} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                ) : (
+                  <ImageIcon size={48} className="text-muted" />
+                )}
+              </div>
+              <div style={{ flex: 1, minWidth: 200 }}>
+                <h3 style={{ fontSize: 18, fontWeight: 700, margin: '0 0 6px 0' }}>{viewingProduct.name}</h3>
+                <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--primary)', marginBottom: 8 }}>
+                  ${(viewingProduct.price || 0).toFixed(2)}
+                </div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+                  <span className="badge badge-info">{viewingProduct.category || 'Apparel'}</span>
+                  <span className={`badge ${viewingProduct.inStock !== false ? 'badge-success' : 'badge-danger'}`}>
+                    {viewingProduct.inStock !== false ? 'In Stock' : 'Out of Stock'}
+                  </span>
+                  <span className="badge badge-default">
+                    {viewingProduct.visibility || 'public'}
+                  </span>
+                  {!viewingProduct.active && <span className="badge badge-danger">Hidden</span>}
+                </div>
+                <p style={{ color: 'var(--text-secondary)', fontSize: 13, lineHeight: 1.5, margin: 0 }}>
+                  {viewingProduct.description || 'No description provided.'}
+                </p>
+              </div>
+            </div>
+
+            <div style={{ borderTop: '1px solid var(--border)', paddingTop: 16, marginBottom: 16 }}>
+              <h4 style={{ fontSize: 14, fontWeight: 600, marginBottom: 10 }}>Sizing &amp; Stock Availability</h4>
+              {Array.isArray(viewingProduct.variants) && viewingProduct.variants.length > 0 ? (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 8 }}>
+                  {viewingProduct.variants.map((v, i) => (
+                    <div key={i} style={{ padding: '8px 12px', border: '1px solid var(--border)', borderRadius: 8, background: '#F8FAFC' }}>
+                      <div style={{ fontWeight: 600, fontSize: 13 }}>{v.label}</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+                        Stock: {v.stock === -1 ? 'Unlimited' : v.stock}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-muted text-sm">One Size / Standard stock</p>
+              )}
+            </div>
+
+            {viewingProduct.sizeGuideUrl && (
+              <div style={{ borderTop: '1px solid var(--border)', paddingTop: 16, marginBottom: 16 }}>
+                <h4 style={{ fontSize: 14, fontWeight: 600, marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Ruler size={16} /> Size Guide
+                </h4>
+                <div style={{ maxHeight: 220, overflow: 'auto', borderRadius: 8, border: '1px solid var(--border)' }}>
+                  <img src={viewingProduct.sizeGuideUrl} alt="Size Guide" style={{ width: '100%', objectFit: 'contain' }} />
+                </div>
+              </div>
+            )}
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, borderTop: '1px solid var(--border)', paddingTop: 16 }}>
+              <button className="btn btn-outline" onClick={() => setViewingProduct(null)}>Close</button>
+              <button className="btn btn-primary" onClick={() => { const p = viewingProduct; setViewingProduct(null); openEdit(p); }}>
+                <Edit2 size={14} className="mr-xs" /> Edit Product
+              </button>
+            </div>
+          </div>
+        )}
       </Modal>
     </div>
   );

@@ -12,7 +12,8 @@ const DataTable = ({
   onSearch, 
   loading,
   searchPlaceholder = "Search...",
-  emptyMessage = "No data found"
+  emptyMessage = "No data found",
+  onRowClick
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
 
@@ -67,7 +68,15 @@ const DataTable = ({
               </tr>
             ) : (
               data.map((row, rowIdx) => (
-                <tr key={rowIdx}>
+                <tr 
+                  key={rowIdx}
+                  className={onRowClick ? 'clickable-row' : ''}
+                  onClick={(e) => {
+                    if (onRowClick && !e.target.closest('button') && !e.target.closest('a') && !e.target.closest('input')) {
+                      onRowClick(row);
+                    }
+                  }}
+                >
                   {columns.map((col, colIdx) => (
                     <td key={colIdx}>
                       {col.render ? col.render(row[col.accessor], row) : row[col.accessor]}
@@ -76,16 +85,23 @@ const DataTable = ({
                   {actions && (
                     <td style={{ textAlign: 'right' }}>
                       <div className="flex gap-sm" style={{ justifyContent: 'flex-end' }}>
-                        {actions.map((action, actionIdx) => (
-                          <button 
-                            key={actionIdx}
-                            className={`btn-icon ${action.variant || ''}`}
-                            onClick={() => action.onClick(row)}
-                            title={action.label}
-                          >
-                            {action.icon}
-                          </button>
-                        ))}
+                        {actions.map((action, actionIdx) => {
+                          if (action.hidden && action.hidden(row)) return null;
+                          return (
+                            <button 
+                              key={actionIdx}
+                              className={`btn-icon ${action.variant || ''}`}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                action.onClick(row);
+                              }}
+                              title={action.label}
+                              style={action.style}
+                            >
+                              {action.icon}
+                            </button>
+                          );
+                        })}
                       </div>
                     </td>
                   )}

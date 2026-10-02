@@ -94,7 +94,7 @@ const userSections = [
   }
 ];
 
-export default function Sidebar({ isCollapsed, onToggle }) {
+export default function Sidebar({ isCollapsed, onToggle, mobileOpen, onCloseMobile }) {
   const { logout, isOwnerOf, hasRole, profile, isSuperAdmin, portalMode, setPortalMode, adminClubIds } = useAuth();
   const { selectedClubId } = useClub();
   const navigate = useNavigate();
@@ -113,7 +113,7 @@ export default function Sidebar({ isCollapsed, onToggle }) {
   const activeSections = portalMode === 'admin' ? adminSections : userSections;
 
   return (
-    <aside className={`sidebar ${isCollapsed ? 'collapsed' : ''}`}>
+    <aside className={`sidebar ${isCollapsed ? 'collapsed' : ''} ${mobileOpen ? 'mobile-open' : ''}`}>
       <button className="sidebar-toggle" onClick={onToggle}>
         {isCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
       </button>
@@ -185,6 +185,7 @@ export default function Sidebar({ isCollapsed, onToggle }) {
                   end={to === '/'}
                   title={isCollapsed ? label : ''}
                   className={({ isActive }) => `sidebar-link${isActive ? ' active' : ''}`}
+                  onClick={() => onCloseMobile?.()}
                 >
                   <Icon size={18} />
                   {!isCollapsed && <span>{label}</span>}

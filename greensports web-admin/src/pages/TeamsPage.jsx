@@ -1,16 +1,18 @@
 import { useEffect, useRef, useState } from 'react';
-import { collection, doc, getDocs, setDoc, updateDoc, deleteDoc, serverTimestamp, orderBy, query } from 'firebase/firestore';
+import { collection, doc, getDocs, setDoc, updateDoc, deleteDoc, serverTimestamp, orderBy, query, arrayUnion, arrayRemove } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { useClub } from '../context/ClubContext';
 import ClubSelector from '../components/ClubSelector';
 import Modal from '../components/Modal';
 import TeamGroupDetail from '../components/TeamGroupDetail';
+import MultiSelect from '../components/MultiSelect';
 import { parseImportFile, downloadCsvTemplate } from '../utils/bulkImport';
 import { Search, Plus, Edit2, Trash2, Upload, Download, Eye } from 'lucide-react';
 
 export default function TeamsPage() {
   const { selectedClubId } = useClub();
   const [teams, setTeams] = useState([]);
+  const [members, setMembers] = useState([]);
   const [search, setSearch] = useState('');
   const [modal, setModal] = useState(null); // null | 'add' | team obj
   const [viewingItem, setViewingItem] = useState(null);
@@ -32,46 +34,95 @@ export default function TeamsPage() {
     }
   };
 
-  useEffect(() => { fetch(); }, [selectedClubId]);
+  const fetchMembers = async () => {
+    if (!selectedClubId) return;
+    try {
+      const snap = await getDocs(collection(db, 'clubs', selectedClubId, 'members'));
+      setMembers(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  useEffect(() => { 
+    fetch(); 
+    fetchMembers();
+  }, [selectedClubId]);
 
   const filtered = teams.filter(t =>
     t.name?.toLowerCase().includes(search.toLowerCase()) ||
     t.ageGroup?.toLowerCase().includes(search.toLowerCase())
   );
 
-  const openAdd = () => { setForm({ name: '', ageGroup: '', description: '' }); setModal('add'); };
-  const openEdit = (team) => { setForm({ name: team.name || '', ageGroup: team.ageGroup || '', description: team.description || '' }); setModal(team); };
+  const openAdd = () => { setForm({ name: '', ageGroup: '', description: '', memberIds: [] }); setModal('add'); };
+  const openEdit = (team) => { 
+    setForm({ 
+      name: team.name || '', 
+      ageGroup: team.ageGroup || '', 
+      description: team.description || '',
+      memberIds: members.filter(m => m.teamIds?.includes(team.id)).map(m => m.id)
+    }); 
+    setModal(team); 
+  };
 
   const handleSave = async () => {
     if (!form.name?.trim()) return alert('Team name is required');
     setSaving(true);
     try {
+      const { writeBatch } = await import('firebase/firestore');
+      const batch = writeBatch(db);
+      
+      const teamId = modal === 'add' ? doc(col()).id : modal.id;
+      const teamRef = doc(col(), teamId);
+      const groupRef = doc(db, 'clubs', selectedClubId, 'groups', teamId);
+
+      const teamData = {
+        name: form.name,
+        ageGroup: form.ageGroup,
+        description: form.description,
+        updatedAt: serverTimestamp(),
+      };
+
       if (modal === 'add') {
-        const ref = doc(col());
-        await setDoc(ref, { ...form, memberIds: [], createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
-        await setDoc(doc(db, 'clubs', selectedClubId, 'groups', ref.id), {
-          groupId: ref.id,
-          groupName: form.name,
-          groupType: 'Team',
-          source: 'team',
-          sourceId: ref.id,
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        }, { merge: true });
+        teamData.createdAt = serverTimestamp();
+        batch.set(teamRef, teamData);
       } else {
-        await updateDoc(doc(db, 'clubs', selectedClubId, 'teams', modal.id), { ...form, updatedAt: serverTimestamp() });
-        if (form.name) {
-          await setDoc(doc(db, 'clubs', selectedClubId, 'groups', modal.id), {
-            groupId: modal.id,
-            groupName: form.name,
-            groupType: 'Team',
-            source: 'team',
-            sourceId: modal.id,
-            updatedAt: serverTimestamp(),
-          }, { merge: true });
-        }
+        batch.update(teamRef, teamData);
       }
+
+      batch.set(groupRef, {
+        groupId: teamId,
+        groupName: form.name,
+        groupType: 'Team',
+        source: 'team',
+        sourceId: teamId,
+        updatedAt: serverTimestamp(),
+        ...(modal === 'add' ? { createdAt: serverTimestamp() } : {})
+      }, { merge: true });
+
+      // Update members
+      const oldMemberIds = modal === 'add' ? [] : members.filter(m => m.teamIds?.includes(teamId)).map(m => m.id);
+      const newMemberIds = form.memberIds || [];
+      
+      const added = newMemberIds.filter(id => !oldMemberIds.includes(id));
+      const removed = oldMemberIds.filter(id => !newMemberIds.includes(id));
+
+      for (const mId of added) {
+        batch.update(doc(db, 'clubs', selectedClubId, 'members', mId), {
+          teamIds: arrayUnion(teamId),
+          updatedAt: serverTimestamp()
+        });
+      }
+      for (const mId of removed) {
+        batch.update(doc(db, 'clubs', selectedClubId, 'members', mId), {
+          teamIds: arrayRemove(teamId),
+          updatedAt: serverTimestamp()
+        });
+      }
+
+      await batch.commit();
       await fetch();
+      await fetchMembers();
       setModal(null);
     } catch (err) { alert(err.message); }
     setSaving(false);
@@ -192,7 +243,7 @@ export default function TeamsPage() {
               <tr key={t.id}>
                 <td><strong>{t.name}</strong></td>
                 <td>{t.ageGroup || '—'}</td>
-                <td>{t.memberIds?.length || 0}</td>
+                <td>{members.filter(m => m.teamIds?.includes(t.id)).length}</td>
                 <td className="text-sm text-muted">{t.createdAt?.toDate?.().toLocaleDateString() || '—'}</td>
                 <td>
                   <div className="flex gap-sm">
@@ -211,6 +262,15 @@ export default function TeamsPage() {
         <div className="form-group"><label>Team Name</label><input className="form-control" value={form.name || ''} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
         <div className="form-group"><label>Age Group / Division</label><input className="form-control" placeholder="e.g. U15 Boys Premier" value={form.ageGroup || ''} onChange={e => setForm({ ...form, ageGroup: e.target.value })} /></div>
         <div className="form-group"><label>Description</label><textarea className="form-control" value={form.description || ''} onChange={e => setForm({ ...form, description: e.target.value })} /></div>
+        <div className="form-group">
+          <label>Assign Members</label>
+          <MultiSelect
+            options={members.map(m => ({ id: m.id, name: m.displayName || m.email || 'Unknown' }))}
+            selectedValues={form.memberIds || []}
+            onChange={vals => setForm({ ...form, memberIds: vals })}
+            placeholder="Search and assign members..."
+          />
+        </div>
         <div className="form-actions">
           <button className="btn btn-outline" onClick={() => setModal(null)}>Cancel</button>
           <button className="btn btn-primary" onClick={handleSave} disabled={saving}>{saving ? 'Saving…' : modal === 'add' ? 'Create Team' : 'Save Changes'}</button>

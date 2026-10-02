@@ -6,6 +6,9 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Alert,
+  Linking,
+  Modal,
+  TextInput,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
@@ -14,6 +17,16 @@ import {
   MapPin,
   Clock3,
   Trophy,
+  Video,
+  Play,
+  ExternalLink,
+  Flame,
+  Radio,
+  Edit3,
+  X,
+  Plus,
+  Minus,
+  Check,
 } from "lucide-react-native";
 import { Text } from "../../components/ui/Typography";
 import { Card } from "../../components/ui/Card";
@@ -23,6 +36,8 @@ import { useClub } from "../../contexts/ClubContext";
 import { getTeam } from "../../services/teamService";
 import { getClubMembers } from "../../services/clubService";
 import { getEventById, updateEvent } from "../../services/eventService";
+import { doc, onSnapshot, updateDoc, serverTimestamp } from "firebase/firestore";
+import { db } from "../../config/firebase";
 
 const normalizeStatus = (value) => {
   const normalized = String(value || "scheduled")
@@ -50,7 +65,69 @@ const buildFixedPlayerSlots = (ids = []) => {
 
 export default function MatchDetailsScreen({ route, navigation }) {
   const { activeClubId, userRole } = useClub();
-  const match = route?.params?.match || {};
+  const initialMatch = route?.params?.match || {};
+  const [matchData, setMatchData] = useState(initialMatch);
+
+  // Real-time live listener for score, stream, timeline, and status
+  useEffect(() => {
+    if (!activeClubId || !initialMatch?.id) return;
+    const unsub = onSnapshot(
+      doc(db, "clubs", activeClubId, "events", initialMatch.id),
+      (snap) => {
+        if (snap.exists()) {
+          setMatchData((prev) => ({ ...prev, id: snap.id, ...snap.data() }));
+        }
+      },
+      (err) => console.warn("Live match listener error:", err)
+    );
+    return () => unsub();
+  }, [activeClubId, initialMatch?.id]);
+
+  const match = matchData;
+
+  // Live Score Modal State (for sideline coaches/admins)
+  const [showScoreModal, setShowScoreModal] = useState(false);
+  const [liveHomeScore, setLiveHomeScore] = useState(0);
+  const [liveAwayScore, setLiveAwayScore] = useState(0);
+  const [liveStatus, setLiveStatus] = useState("live");
+  const [livePeriod, setLivePeriod] = useState("1st Half");
+  const [savingLiveScore, setSavingLiveScore] = useState(false);
+
+  const openScoreModal = () => {
+    setLiveHomeScore(typeof match.ourScore === "number" ? match.ourScore : (typeof match.homeScore === "number" ? match.homeScore : 0));
+    setLiveAwayScore(typeof match.opponentScore === "number" ? match.opponentScore : (typeof match.awayScore === "number" ? match.awayScore : 0));
+    setLiveStatus(match.status || "live");
+    setLivePeriod(match.period || "1st Half");
+    setShowScoreModal(true);
+  };
+
+  const saveLiveScore = async () => {
+    if (!activeClubId || !match?.id) return;
+    setSavingLiveScore(true);
+    try {
+      const payload = {
+        ourScore: liveHomeScore,
+        opponentScore: liveAwayScore,
+        homeScore: liveHomeScore,
+        awayScore: liveAwayScore,
+        score: `${liveHomeScore} - ${liveAwayScore}`,
+        status: liveStatus,
+        period: livePeriod,
+        updatedAt: serverTimestamp(),
+      };
+      await updateDoc(doc(db, "clubs", activeClubId, "events", match.id), payload);
+      try {
+        await updateDoc(doc(db, "clubs", activeClubId, "leagueFixtures", match.id), payload);
+      } catch (e) {}
+      setShowScoreModal(false);
+      Alert.alert("Success", "Live score updated successfully!");
+    } catch (err) {
+      Alert.alert("Error", "Could not update score: " + err.message);
+    } finally {
+      setSavingLiveScore(false);
+    }
+  };
+
   const [loadingSquad, setLoadingSquad] = useState(false);
   const [selectedSquadPlayers, setSelectedSquadPlayers] = useState([]);
   const [manualPlayerOptions, setManualPlayerOptions] = useState([]);
@@ -466,14 +543,29 @@ export default function MatchDetailsScreen({ route, navigation }) {
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
+        {/* Pulsing Live Match Header */}
+        {statusLabel === "Live" && (
+          <View style={styles.liveBanner}>
+            <View style={styles.liveDot} />
+            <Text variant="small" weight="800" color="#fff" style={{ letterSpacing: 0.8 }}>
+              LIVE IN PLAY
+            </Text>
+            {match.period ? (
+              <Text variant="small" weight="700" color="#fff" style={{ marginLeft: 6 }}>
+                • {match.period} {match.matchMinute ? `(${match.matchMinute})` : ""}
+              </Text>
+            ) : null}
+          </View>
+        )}
+
         <Card style={styles.scoreCard}>
           <View style={styles.scoreHeader}>
             <Text
               variant="small"
-              color={theme.colors.textSecondary}
-              weight="600"
+              color={statusLabel === "Live" ? "#EF4444" : theme.colors.textSecondary}
+              weight="700"
             >
-              {statusLabel.toUpperCase()}
+              {statusLabel === "Live" ? "🔴 " : ""}{statusLabel.toUpperCase()}
             </Text>
             <Text
               variant="small"
@@ -513,7 +605,58 @@ export default function MatchDetailsScreen({ route, navigation }) {
               </Text>
             </View>
           </View>
+
+          {canEditTeamSheet && (
+            <TouchableOpacity
+              style={styles.updateScoreBtn}
+              onPress={openScoreModal}
+              activeOpacity={0.8}
+            >
+              <Edit3 size={14} color={theme.colors.primary} style={{ marginRight: 6 }} />
+              <Text variant="small" weight="700" color={theme.colors.primary}>
+                Update Live Score &amp; Status
+              </Text>
+            </TouchableOpacity>
+          )}
         </Card>
+
+        {/* Live Stream Broadcast Card */}
+        {match.streamUrl ? (
+          <Card style={styles.streamCard}>
+            <View style={styles.streamHeader}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1 }}>
+                <View style={styles.streamIconWrap}>
+                  <Video color="#EF4444" size={22} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text variant="body" weight="700" numberOfLines={1}>
+                    {match.streamTitle || "Live Match Stream"}
+                  </Text>
+                  <Text variant="caption" color={theme.colors.textSecondary}>
+                    {statusLabel === "Live" ? "🔴 Live Video Broadcast Active" : "Match Video / Stream Link"}
+                  </Text>
+                </View>
+              </View>
+              <View style={styles.streamBadge}>
+                <Text variant="caption" weight="800" color="#fff">
+                  STREAM
+                </Text>
+              </View>
+            </View>
+
+            <TouchableOpacity
+              style={styles.watchStreamBtn}
+              onPress={() => Linking.openURL(match.streamUrl).catch(() => Alert.alert("Error", "Could not open stream URL"))}
+              activeOpacity={0.85}
+            >
+              <Play color="#fff" size={18} fill="#fff" style={{ marginRight: 6 }} />
+              <Text variant="body" weight="700" color="#fff">
+                Watch Live Stream
+              </Text>
+              <ExternalLink color="#fff" size={16} style={{ marginLeft: 6 }} />
+            </TouchableOpacity>
+          </Card>
+        ) : null}
 
         <Card style={styles.infoCard}>
           <View style={styles.infoRow}>
@@ -551,6 +694,37 @@ export default function MatchDetailsScreen({ route, navigation }) {
               "No additional game notes yet. This section is ready for squad sheets, match notes, and live updates."}
           </Text>
         </Card>
+
+        {/* Live Match Timeline & Commentary Feed */}
+        {Array.isArray(match.timeline) && match.timeline.length > 0 && (
+          <Card style={styles.notesCard}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 12 }}>
+              <Flame color={theme.colors.primary} size={18} />
+              <Text variant="h4">Match Timeline &amp; Highlights ({match.timeline.length})</Text>
+            </View>
+            <View style={styles.timelineList}>
+              {match.timeline.map((item, idx) => (
+                <View key={item.id || `timeline-${idx}`} style={styles.timelineRow}>
+                  <View style={styles.timelineMinuteBadge}>
+                    <Text variant="caption" weight="700" color={theme.colors.text}>
+                      {item.minute || "—"}
+                    </Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text variant="small" weight="700" color={theme.colors.text}>
+                      {item.type === "goal" ? "⚽ " : item.type === "yellow_card" ? "🟨 " : item.type === "red_card" ? "🟥 " : item.type === "sub" ? "🔄 " : "📢 "}
+                      {item.player ? `${item.player} — ` : ""}
+                      {item.description}
+                    </Text>
+                    <Text variant="caption" color={theme.colors.textSecondary}>
+                      Score: {item.scoreAfter || `${match.ourScore} - ${match.opponentScore}`}
+                    </Text>
+                  </View>
+                </View>
+              ))}
+            </View>
+          </Card>
+        )}
 
         <Card style={styles.notesCard}>
           <Text variant="h4" style={{ marginBottom: 6 }}>
@@ -883,6 +1057,89 @@ export default function MatchDetailsScreen({ route, navigation }) {
           )}
         </Card>
       </ScrollView>
+
+      {/* Mobile Live Score Updating Modal */}
+      <Modal
+        visible={showScoreModal}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setShowScoreModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalSheet}>
+            <View style={styles.modalHeader}>
+              <Text variant="h3">Update Live Match</Text>
+              <TouchableOpacity onPress={() => setShowScoreModal(false)}>
+                <X color={theme.colors.textSecondary} size={22} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={{ maxHeight: 420 }}>
+              {/* Score Adjuster */}
+              <View style={styles.modalScoreRow}>
+                <View style={styles.modalTeamScoreCol}>
+                  <Text variant="small" weight="700" numberOfLines={1}>{teamName}</Text>
+                  <Text variant="h1" weight="800" style={styles.modalScoreBig}>{liveHomeScore}</Text>
+                  <View style={styles.modalBtnRow}>
+                    <TouchableOpacity style={styles.counterBtn} onPress={() => setLiveHomeScore(prev => Math.max(0, prev - 1))}>
+                      <Minus size={16} color={theme.colors.text} />
+                    </TouchableOpacity>
+                    <TouchableOpacity style={[styles.counterBtn, styles.counterBtnPrimary]} onPress={() => setLiveHomeScore(prev => prev + 1)}>
+                      <Plus size={16} color="#fff" />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+
+                <Text variant="h3" color={theme.colors.textSecondary}>:</Text>
+
+                <View style={styles.modalTeamScoreCol}>
+                  <Text variant="small" weight="700" numberOfLines={1}>{opponent}</Text>
+                  <Text variant="h1" weight="800" style={styles.modalScoreBig}>{liveAwayScore}</Text>
+                  <View style={styles.modalBtnRow}>
+                    <TouchableOpacity style={styles.counterBtn} onPress={() => setLiveAwayScore(prev => Math.max(0, prev - 1))}>
+                      <Minus size={16} color={theme.colors.text} />
+                    </TouchableOpacity>
+                    <TouchableOpacity style={[styles.counterBtn, styles.counterBtnPrimary]} onPress={() => setLiveAwayScore(prev => prev + 1)}>
+                      <Plus size={16} color="#fff" />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </View>
+
+              {/* Status Selector */}
+              <Text variant="small" style={styles.label}>Match Status</Text>
+              <View style={styles.statusChipsRow}>
+                {["scheduled", "live", "halftime", "completed"].map((st) => (
+                  <TouchableOpacity
+                    key={st}
+                    style={[styles.statusChip, liveStatus === st && styles.statusChipActive]}
+                    onPress={() => setLiveStatus(st)}
+                  >
+                    <Text variant="caption" weight="700" color={liveStatus === st ? "#fff" : theme.colors.text}>
+                      {st === "live" ? "🔴 Live" : st === "halftime" ? "⏸️ Half Time" : st === "completed" ? "🏁 Full Time" : "Scheduled"}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <Text variant="small" style={styles.label}>Period / Half Label</Text>
+              <TextInput
+                value={livePeriod}
+                onChangeText={setLivePeriod}
+                placeholder="e.g. 1st Half, 2nd Half, Extra Time"
+                style={styles.modalInput}
+              />
+            </ScrollView>
+
+            <Button
+              title={savingLiveScore ? "Saving..." : "Save & Broadcast Live"}
+              onPress={saveLiveScore}
+              loading={savingLiveScore}
+              style={{ marginTop: 16 }}
+            />
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -910,6 +1167,22 @@ const styles = StyleSheet.create({
     padding: theme.spacing.md,
     paddingBottom: 120,
   },
+  liveBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#EF4444",
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: theme.radius.sm || 8,
+    marginBottom: theme.spacing.sm,
+  },
+  liveDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#fff",
+    marginRight: 8,
+  },
   scoreCard: {
     marginBottom: theme.spacing.md,
   },
@@ -931,6 +1204,72 @@ const styles = StyleSheet.create({
     minWidth: 90,
     alignItems: "center",
     justifyContent: "center",
+  },
+  updateScoreBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 14,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: "rgba(16, 185, 129, 0.08)",
+    borderWidth: 1,
+    borderColor: "rgba(16, 185, 129, 0.25)",
+  },
+  streamCard: {
+    marginBottom: theme.spacing.md,
+    backgroundColor: "#0F172A",
+  },
+  streamHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 12,
+  },
+  streamIconWrap: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: "rgba(239, 68, 68, 0.15)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  streamBadge: {
+    backgroundColor: "#EF4444",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  watchStreamBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#EF4444",
+    borderRadius: 10,
+    paddingVertical: 12,
+  },
+  timelineList: {
+    flexDirection: "column",
+    gap: 8,
+  },
+  timelineRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    backgroundColor: theme.colors.surface,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  timelineMinuteBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 6,
+    backgroundColor: "#E2E8F0",
+    minWidth: 32,
+    alignItems: "center",
   },
   infoCard: {
     marginBottom: theme.spacing.md,
@@ -973,5 +1312,89 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "flex-end",
+  },
+  modalSheet: {
+    backgroundColor: theme.colors.surface,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: theme.spacing.lg,
+    maxHeight: "85%",
+  },
+  modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: theme.spacing.md,
+  },
+  modalScoreRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-around",
+    paddingVertical: 12,
+    backgroundColor: "#F8FAFC",
+    borderRadius: 12,
+    marginBottom: 16,
+  },
+  modalTeamScoreCol: {
+    alignItems: "center",
+    minWidth: 100,
+  },
+  modalScoreBig: {
+    fontSize: 40,
+    marginVertical: 4,
+  },
+  modalBtnRow: {
+    flexDirection: "row",
+    gap: 10,
+    marginTop: 6,
+  },
+  counterBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#fff",
+  },
+  counterBtnPrimary: {
+    backgroundColor: theme.colors.primary,
+    borderColor: theme.colors.primary,
+  },
+  label: {
+    marginBottom: 6,
+    fontWeight: "700",
+  },
+  statusChipsRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginBottom: 14,
+  },
+  statusChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    backgroundColor: "#F1F5F9",
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  statusChipActive: {
+    backgroundColor: theme.colors.primary,
+    borderColor: theme.colors.primary,
+  },
+  modalInput: {
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: 10,
+    padding: 10,
+    backgroundColor: "#F8FAFC",
+    fontSize: 14,
   },
 });

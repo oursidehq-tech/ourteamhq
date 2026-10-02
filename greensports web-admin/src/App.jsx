@@ -546,6 +546,7 @@ function ProtectedRoutes() {
           <Route path="posts" element={<PostsPage />} />
           <Route path="events" element={<EventsPage />} />
           <Route path="products" element={<ProductsPage />} />
+          <Route path="shop" element={<ProductsPage />} />
           <Route path="orders" element={<OrdersPage />} />
           <Route path="tasks" element={<TasksPage />} />
           <Route path="rosters" element={<RostersPage />} />

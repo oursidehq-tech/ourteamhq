@@ -157,11 +157,18 @@ export default function GroupsPage() {
               </tr>
             ) : (
               filtered.map((g) => (
-                <tr key={g.id}>
+                <tr 
+                  key={g.id} 
+                  className="clickable-row"
+                  onClick={(e) => {
+                    if (!e.target.closest('button')) setViewingItem(g);
+                  }}
+                >
                   <td>
                     <strong>{g.groupName || "—"}</strong>
+                    {g.description && <div className="text-xs text-muted">{g.description}</div>}
                   </td>
-                  <td>{g.groupType || "Custom"}</td>
+                  <td><span className="badge badge-info">{g.groupType || "Custom"}</span></td>
                   <td>{g.source || (g.system ? "system" : "manual")}</td>
                   <td className="text-sm text-muted">
                     {g.createdAt?.toDate?.().toLocaleDateString() || "—"}
@@ -170,24 +177,24 @@ export default function GroupsPage() {
                     <div className="flex gap-sm">
                       <button
                         className="btn-icon"
-                        onClick={() => setViewingItem(g)}
-                        title="View Details"
+                        onClick={(e) => { e.stopPropagation(); setViewingItem(g); }}
+                        title="View Group Details"
                       >
                         <Eye size={15} />
                       </button>
                       <button
                         className="btn-icon"
-                        onClick={() => openEdit(g)}
+                        onClick={(e) => { e.stopPropagation(); openEdit(g); }}
                         disabled={isLockedGroup(g)}
-                        title={isLockedGroup(g) ? "Locked" : "Edit"}
+                        title={isLockedGroup(g) ? "Locked" : "Edit Group"}
                       >
                         <Edit2 size={15} />
                       </button>
                       <button
                         className="btn-icon danger"
-                        onClick={() => handleDelete(g)}
+                        onClick={(e) => { e.stopPropagation(); handleDelete(g); }}
                         disabled={isLockedGroup(g)}
-                        title={isLockedGroup(g) ? "Locked" : "Delete"}
+                        title={isLockedGroup(g) ? "Locked" : "Delete Group"}
                       >
                         <Trash2 size={15} />
                       </button>
@@ -206,21 +213,39 @@ export default function GroupsPage() {
         title={modal === "add" ? "Add Group" : "Edit Group"}
       >
         <div className="form-group">
-          <label>Group Name</label>
+          <label>Group Name <span className="text-danger">*</span></label>
           <input
             className="form-control"
             value={form.groupName || ""}
             onChange={(e) => setForm({ ...form, groupName: e.target.value })}
+            placeholder="e.g. Canteen Volunteers, Coaching Committee"
             disabled={modal && modal !== "add" && isLockedGroup(modal)}
+            required
           />
         </div>
         <div className="form-group">
           <label>Group Type</label>
-          <input
+          <select
             className="form-control"
-            value={form.groupType || ""}
+            value={form.groupType || "Custom"}
             onChange={(e) => setForm({ ...form, groupType: e.target.value })}
             disabled={modal && modal !== "add" && isLockedGroup(modal)}
+          >
+            <option value="Custom">Custom Group</option>
+            <option value="Committee">Committee</option>
+            <option value="Volunteers">Volunteers</option>
+            <option value="Staff">Staff</option>
+            <option value="Medical">Medical / First Aid</option>
+          </select>
+        </div>
+        <div className="form-group">
+          <label>Description / Purpose (Optional)</label>
+          <textarea
+            rows={2}
+            className="form-control"
+            value={form.description || ""}
+            onChange={(e) => setForm({ ...form, description: e.target.value })}
+            placeholder="Describe duties, roles, or meeting schedules..."
           />
         </div>
         <div className="form-actions">

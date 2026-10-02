@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, Bell, User, Settings, Command, Loader2, X } from 'lucide-react';
+import { Search, Bell, User, Settings, Command, Loader2, X, Menu } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useClub } from '../context/ClubContext';
 import { searchService } from '../services/searchService';
 import ClubSelector from './ClubSelector';
 
-const TopBar = () => {
+const TopBar = ({ onToggleSidebar }) => {
   const { profile, isSuperAdmin } = useAuth();
   const { selectedClubId, selectedClub } = useClub();
   const navigate = useNavigate();
@@ -53,7 +53,15 @@ const TopBar = () => {
 
   return (
     <header className="topbar">
-      <div className="topbar-left">
+      <div className="topbar-left" style={{ display: 'flex', alignItems: 'center' }}>
+        <button 
+          className="topbar-btn mobile-menu-btn" 
+          onClick={onToggleSidebar} 
+          aria-label="Toggle navigation menu"
+          style={{ marginRight: 12, flexShrink: 0 }}
+        >
+          <Menu size={20} />
+        </button>
         <div 
           ref={searchRef}
           className={`global-search ${searchFocused ? 'focused' : ''}`}

@@ -5,6 +5,7 @@ import {
   getDocs, 
   addDoc, 
   updateDoc, 
+  deleteDoc,
   doc, 
   serverTimestamp,
   orderBy
@@ -61,6 +62,44 @@ export const complianceService = {
     }
 
     return items;
+  },
+
+  async getComplianceForms(clubId) {
+    try {
+      const formsRef = collection(db, 'clubs', clubId, 'complianceForms');
+      try {
+        const snap = await getDocs(query(formsRef, orderBy('createdAt', 'desc')));
+        return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      } catch {
+        const snap = await getDocs(formsRef);
+        return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      }
+    } catch (err) {
+      console.error('Error fetching compliance forms:', err);
+      return [];
+    }
+  },
+
+  async createComplianceForm(clubId, data) {
+    const formsRef = collection(db, 'clubs', clubId, 'complianceForms');
+    return await addDoc(formsRef, {
+      ...data,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+  },
+
+  async updateComplianceForm(clubId, formId, data) {
+    const formRef = doc(db, 'clubs', clubId, 'complianceForms', formId);
+    return await updateDoc(formRef, {
+      ...data,
+      updatedAt: serverTimestamp(),
+    });
+  },
+
+  async deleteComplianceForm(clubId, formId) {
+    const formRef = doc(db, 'clubs', clubId, 'complianceForms', formId);
+    return await deleteDoc(formRef);
   },
 
   async updateComplianceStatus(clubId, id, status, notes = '') {

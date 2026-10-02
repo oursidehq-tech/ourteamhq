@@ -4,13 +4,14 @@ import { db } from '../config/firebase';
 import { useClub } from '../context/ClubContext';
 import Modal from '../components/Modal';
 import MultiSelect from '../components/MultiSelect';
-import { Search, Plus, Edit2, Trash2, Calendar, RefreshCw } from 'lucide-react';
+import { Search, Plus, Edit2, Trash2, Calendar, RefreshCw, Eye, MapPin, Clock, Users } from 'lucide-react';
 
 export default function EventsPage() {
   const { selectedClubId } = useClub();
   const [events, setEvents] = useState([]);
   const [search, setSearch] = useState('');
   const [modal, setModal] = useState(null);
+  const [viewingEvent, setViewingEvent] = useState(null);
   const [form, setForm] = useState({});
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -211,11 +212,18 @@ export default function EventsPage() {
         assignedUserName: selectedUsers.map(u => u.name).join(', '),
         assignedUserIds: form.assignedUserIds || [],
         teamId: form.assignedTeamIds?.[0] || null,
-        assignedGroupId: form.assignedGroupIds?.[0] || null,
+        teamIds: form.assignedTeamIds || [],
+        groupId: form.assignedGroupIds?.[0] || null,
+        groupIds: form.assignedGroupIds || [],
+        assignedGroupId: form.assignedGroupIds?.[0] || form.assignedTeamIds?.[0] || null,
         assignedGroupIds: mergedGroupIds,
         assignedGroupName: mergedGroupNames.join(', '),
-        groupType: form.assignedTeamIds?.length > 0 ? 'Team' : 'Committee',
+        groupType: form.assignedTeamIds?.length > 0 ? 'Team' : 'Group',
         openToAll: mergedGroupIds.length === 0 && (form.assignedUserIds || []).length === 0,
+        isPublic: mergedGroupIds.length === 0 && (form.assignedUserIds || []).length === 0,
+        visibility: (mergedGroupIds.length === 0 && (form.assignedUserIds || []).length === 0) ? 'Public' : (form.assignedTeamIds?.length > 0 ? 'Team-Only' : 'Club-Only'),
+        rsvps: (modal && modal !== 'add' && (modal.rsvps || modal.rsvp)) || {},
+        rsvp: (modal && modal !== 'add' && (modal.rsvps || modal.rsvp)) || {},
         updatedAt: serverTimestamp()
       };
 
@@ -224,6 +232,7 @@ export default function EventsPage() {
         await setDoc(ref, {
           ...eventPayload,
           rsvp: {},
+          rsvps: {},
           createdBy: 'admin',
           createdAt: serverTimestamp()
         });
@@ -293,18 +302,25 @@ export default function EventsPage() {
             ) : filtered.length === 0 ? (
               <tr><td colSpan={8} className="table-empty">No events found</td></tr>
             ) : filtered.map(e => (
-              <tr key={e.id}>
+              <tr 
+                key={e.id} 
+                className="clickable-row" 
+                onClick={(eTarget) => {
+                  if (!eTarget.target.closest('button')) setViewingEvent(e);
+                }}
+              >
                 <td><strong>{e.title}</strong></td>
                 <td>{e.startDate === e.endDate ? e.startDate || e.date : `${e.startDate || e.date} to ${e.endDate || e.date}`}</td>
                 <td>{e.isAllDay ? <span className="badge badge-info">All Day</span> : (e.time || e.startTime || '—')}</td>
                 <td>{e.location || '—'}</td>
                 <td><span className={`badge ${typeBadge(e.type)}`}>{e.type || '—'}</span></td>
                 <td>{e.assignedUserName ? `👤 ${e.assignedUserName}` : e.assignedGroupName || <span className="text-muted text-sm">Open to All</span>}</td>
-                <td>{Object.keys(e.rsvp || {}).length}</td>
+                <td>{Object.keys(e.rsvps || e.rsvp || {}).length}</td>
                 <td>
                   <div className="flex gap-sm">
-                    <button className="btn-icon" onClick={() => openEdit(e)}><Edit2 size={15} /></button>
-                    <button className="btn-icon danger" onClick={() => handleDelete(e)}><Trash2 size={15} /></button>
+                    <button className="btn-icon" onClick={(ev) => { ev.stopPropagation(); setViewingEvent(e); }} title="View Details"><Eye size={15} /></button>
+                    <button className="btn-icon" onClick={(ev) => { ev.stopPropagation(); openEdit(e); }} title="Edit Event"><Edit2 size={15} /></button>
+                    <button className="btn-icon danger" onClick={(ev) => { ev.stopPropagation(); handleDelete(e); }} title="Delete Event"><Trash2 size={15} /></button>
                   </div>
                 </td>
               </tr>
@@ -442,6 +458,84 @@ export default function EventsPage() {
             </div>
           </div>
         </div>
+      </Modal>
+
+      {/* View Event Detail Modal */}
+      <Modal open={!!viewingEvent} onClose={() => setViewingEvent(null)} title="Event Details" wide={true}>
+        {viewingEvent && (
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
+              <div>
+                <h3 style={{ margin: '0 0 6px 0', fontSize: '18px' }}>{viewingEvent.title}</h3>
+                <span className={`badge ${typeBadge(viewingEvent.type)}`}>{viewingEvent.type || 'Event'}</span>
+              </div>
+              <div className="flex gap-sm">
+                <button className="btn btn-outline" onClick={() => { const ev = viewingEvent; setViewingEvent(null); openEdit(ev); }}>
+                  <Edit2 size={15} /> Edit Event
+                </button>
+                <button className="btn btn-outline danger" onClick={() => handleDelete(viewingEvent)}>
+                  <Trash2 size={15} /> Delete
+                </button>
+              </div>
+            </div>
+
+            <div className="card mb-md" style={{ background: 'var(--bg)', padding: '16px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
+              <div>
+                <label className="text-muted text-xs" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <Calendar size={13} /> Date
+                </label>
+                <strong>{viewingEvent.startDate === viewingEvent.endDate ? viewingEvent.startDate || viewingEvent.date : `${viewingEvent.startDate || viewingEvent.date} to ${viewingEvent.endDate || viewingEvent.date}`}</strong>
+              </div>
+              <div>
+                <label className="text-muted text-xs" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <Clock size={13} /> Time
+                </label>
+                <strong>{viewingEvent.isAllDay ? 'All Day' : (viewingEvent.time || viewingEvent.startTime || '—')}</strong>
+              </div>
+              <div>
+                <label className="text-muted text-xs" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <MapPin size={13} /> Location
+                </label>
+                <strong>{viewingEvent.location || 'Clubhouse'}</strong>
+              </div>
+              <div>
+                <label className="text-muted text-xs" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <Users size={13} /> Target
+                </label>
+                <strong>{viewingEvent.assignedUserName ? viewingEvent.assignedUserName : viewingEvent.assignedGroupName || 'Open to All'}</strong>
+              </div>
+            </div>
+
+            {viewingEvent.description && (
+              <div className="card mb-md" style={{ background: 'var(--bg)', padding: '16px' }}>
+                <h5 style={{ margin: '0 0 8px 0', fontSize: '13px', textTransform: 'uppercase', color: 'var(--text-secondary)' }}>Description</h5>
+                <p style={{ margin: 0, lineHeight: 1.6, whiteSpace: 'pre-line' }}>{viewingEvent.description}</p>
+              </div>
+            )}
+
+            {/* RSVPs section */}
+            <div className="card mb-md" style={{ padding: '16px' }}>
+              <h5 style={{ margin: '0 0 10px 0', fontSize: '14px', fontWeight: 600 }}>
+                RSVP Responses ({Object.keys(viewingEvent.rsvps || viewingEvent.rsvp || {}).length})
+              </h5>
+              {Object.keys(viewingEvent.rsvps || viewingEvent.rsvp || {}).length === 0 ? (
+                <p className="text-muted text-sm" style={{ margin: 0 }}>No RSVPs submitted yet for this event.</p>
+              ) : (
+                <div className="flex gap-xs" style={{ flexWrap: 'wrap' }}>
+                  {Object.entries(viewingEvent.rsvps || viewingEvent.rsvp || {}).map(([userId, status], idx) => (
+                    <span key={idx} className={`badge ${status === 'yes' ? 'badge-success' : status === 'no' ? 'badge-danger' : 'badge-warning'}`}>
+                      {userId}: {status}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="form-actions mt-md">
+              <button className="btn btn-primary" onClick={() => setViewingEvent(null)}>Close</button>
+            </div>
+          </div>
+        )}
       </Modal>
     </div>
   );

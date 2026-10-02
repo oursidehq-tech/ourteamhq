@@ -105,12 +105,110 @@ export const leagueService = {
     return await deleteDoc(doc(db, 'clubs', clubId, 'leagueFixtures', fixtureId));
   },
 
-  // Live Score Integration
+  // Live Score & Streaming Integration
   async updateLiveScore(clubId, fixtureId, scores) {
     const fixtureRef = doc(db, 'clubs', clubId, 'leagueFixtures', fixtureId);
     return await updateDoc(fixtureRef, {
       scores,
       lastUpdated: serverTimestamp()
     });
+  },
+
+  async getAllFixturesAndMatches(clubId) {
+    if (!clubId) return [];
+    const results = [];
+    const seenIds = new Set();
+
+    // 1. Load from leagueFixtures
+    try {
+      const snap = await getDocs(collection(db, 'clubs', clubId, 'leagueFixtures'));
+      snap.docs.forEach(d => {
+        seenIds.add(d.id);
+        const data = d.data();
+        results.push({
+          id: d.id,
+          homeTeam: data.homeTeam || 'Home Team',
+          awayTeam: data.awayTeam || 'Away Team',
+          homeScore: typeof data.homeScore === 'number' ? data.homeScore : (typeof data.ourScore === 'number' ? data.ourScore : 0),
+          awayScore: typeof data.awayScore === 'number' ? data.awayScore : (typeof data.opponentScore === 'number' ? data.opponentScore : 0),
+          score: data.score || (typeof data.homeScore === 'number' ? `${data.homeScore} - ${data.awayScore || 0}` : ''),
+          status: data.status || 'Scheduled',
+          streamUrl: data.streamUrl || '',
+          streamTitle: data.streamTitle || '',
+          period: data.period || '',
+          timeline: data.timeline || [],
+          source: 'leagueFixture',
+          ...data
+        });
+      });
+    } catch (e) {
+      console.warn('Error fetching leagueFixtures:', e);
+    }
+
+    // 2. Load from events (type == game)
+    try {
+      const q = query(collection(db, 'clubs', clubId, 'events'), where('type', '==', 'game'));
+      const snap = await getDocs(q);
+      snap.docs.forEach(d => {
+        if (!seenIds.has(d.id)) {
+          const data = d.data();
+          const titleParts = (data.title || '').split(' vs ');
+          results.push({
+            id: d.id,
+            homeTeam: data.teamName || titleParts[0]?.trim() || 'Club Team',
+            awayTeam: data.opponent || titleParts[1]?.trim() || 'Opponent',
+            date: data.date || data.startDate || '',
+            venue: data.location || 'Home Ground',
+            score: (typeof data.ourScore === 'number' && typeof data.opponentScore === 'number')
+              ? `${data.ourScore} - ${data.opponentScore}`
+              : (data.score || ''),
+            homeScore: typeof data.ourScore === 'number' ? data.ourScore : 0,
+            awayScore: typeof data.opponentScore === 'number' ? data.opponentScore : 0,
+            status: data.status || 'scheduled',
+            streamUrl: data.streamUrl || '',
+            streamTitle: data.streamTitle || '',
+            period: data.period || '',
+            timeline: data.timeline || [],
+            source: 'event',
+            ...data
+          });
+        }
+      });
+    } catch (e) {
+      console.warn('Error fetching game events:', e);
+    }
+
+    return results;
+  },
+
+  async updateLiveMatch(clubId, matchId, matchData) {
+    const fixtureRef = doc(db, 'clubs', clubId, 'leagueFixtures', matchId);
+    const eventRef = doc(db, 'clubs', clubId, 'events', matchId);
+
+    const homeScore = typeof matchData.homeScore === 'number' ? matchData.homeScore : 0;
+    const awayScore = typeof matchData.awayScore === 'number' ? matchData.awayScore : 0;
+
+    const payload = {
+      ...matchData,
+      homeScore,
+      awayScore,
+      ourScore: homeScore,
+      opponentScore: awayScore,
+      score: `${homeScore} - ${awayScore}`,
+      updatedAt: serverTimestamp(),
+      lastUpdated: serverTimestamp()
+    };
+
+    try {
+      await setDoc(fixtureRef, payload, { merge: true });
+    } catch (err) {
+      console.warn('Sync fixture failed:', err);
+    }
+
+    try {
+      await setDoc(eventRef, { ...payload, type: 'game' }, { merge: true });
+    } catch (err) {
+      console.warn('Sync event failed:', err);
+    }
   }
 };

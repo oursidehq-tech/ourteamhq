@@ -249,7 +249,10 @@ export default function TasksPage() {
         assignedUserIds: form.assignedUserIds || [],
         assignedUserNames: assignedUserNames,
         teamId: form.assignedTeamIds?.[0] || null,
-        assignedGroupId: form.assignedGroupIds?.[0] || null,
+        teamIds: form.assignedTeamIds || [],
+        groupId: form.assignedGroupIds?.[0] || null,
+        groupIds: form.assignedGroupIds || [],
+        assignedGroupId: form.assignedGroupIds?.[0] || form.assignedTeamIds?.[0] || null,
         assignedGroupIds: mergedGroupIds,
         assignedGroupName: mergedGroupNames.join(', '),
         groupType: form.assignedTeamIds?.length > 0 ? 'Team' : 'Committee',
@@ -344,7 +347,14 @@ export default function TasksPage() {
             ) : filtered.length === 0 ? (
               <tr><td colSpan={9} className="table-empty">No tasks found</td></tr>
             ) : filtered.map(t => (
-              <tr key={t.id} style={{ opacity: t.status === 'completed' ? .5 : 1 }}>
+              <tr 
+                key={t.id} 
+                className="clickable-row" 
+                style={{ opacity: t.status === 'completed' ? .5 : 1 }}
+                onClick={(e) => {
+                  if (!e.target.closest('button')) openEdit(t);
+                }}
+              >
                 <td>
                   <button className="btn-icon" onClick={() => toggleStatus(t)} style={{ border: 'none' }}>
                     <CheckCircle size={18} color={t.status === 'completed' ? 'var(--success)' : 'var(--border)'} />

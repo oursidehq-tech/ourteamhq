@@ -5,22 +5,26 @@ import { Outlet } from 'react-router-dom';
 
 export default function Layout() {
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   return (
     <div className="admin-layout">
-      <Sidebar isCollapsed={isCollapsed} onToggle={() => setIsCollapsed(!isCollapsed)} />
+      {mobileOpen && (
+        <div 
+          className="sidebar-backdrop" 
+          onClick={() => setMobileOpen(false)} 
+        />
+      )}
+      <Sidebar 
+        isCollapsed={isCollapsed} 
+        onToggle={() => setIsCollapsed(!isCollapsed)} 
+        mobileOpen={mobileOpen}
+        onCloseMobile={() => setMobileOpen(false)}
+      />
       <div 
-        className="content-wrapper"
-        style={{ 
-          display: 'flex', 
-          flexDirection: 'column', 
-          minHeight: '100vh',
-          transition: 'var(--transition)',
-          marginLeft: isCollapsed ? 'var(--sidebar-collapsed-w)' : 'var(--sidebar-w)',
-          minWidth: 0
-        }}
+        className={`content-wrapper ${isCollapsed ? 'is-collapsed' : ''}`}
       >
-        <TopBar />
+        <TopBar onToggleSidebar={() => setMobileOpen(prev => !prev)} />
         <main className="main-content">
           <Outlet />
         </main>
