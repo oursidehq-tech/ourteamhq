@@ -9,7 +9,6 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@rollup/rollup-linux-x64-gnu": "^4.62.2",
     "firebase": "^11.7.1",
     "lucide-react": "^0.460.0",
     "react": "^18.3.1",

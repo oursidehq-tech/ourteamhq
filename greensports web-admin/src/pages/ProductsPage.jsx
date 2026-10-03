@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { collection, doc, getDocs, setDoc, updateDoc, deleteDoc, serverTimestamp, orderBy, query } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { storageService } from '../services/storageService';
 import { useClub } from '../context/ClubContext';
 import Modal from '../components/Modal';
-import { Search, Plus, Edit2, Trash2, Image as ImageIcon, Upload, Globe, Lock, Info, Ruler, Eye } from 'lucide-react';
+import ImageModal from '../components/ImageModal';
+import { Search, Plus, Edit2, Trash2, Image as ImageIcon, Upload, Globe, Lock, Info, Ruler, Eye, X } from 'lucide-react';
 
 export default function ProductsPage() {
   const { selectedClubId } = useClub();
@@ -12,10 +13,15 @@ export default function ProductsPage() {
   const [search, setSearch] = useState('');
   const [modal, setModal] = useState(null);
   const [viewingProduct, setViewingProduct] = useState(null);
+  const [imageModal, setImageModal] = useState({ open: false, url: '', title: '' });
   const [form, setForm] = useState({});
   const [saving, setSaving] = useState(false);
+  
+  // Uploading state & live progress
   const [uploadingImage, setUploadingImage] = useState(false);
   const [uploadingSizeGuide, setUploadingSizeGuide] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState({ product: 0, sizeguide: 0 });
+  const cancelTokens = useRef({ product: null, sizeguide: null });
 
   const col = () => collection(db, 'clubs', selectedClubId, 'products');
 
@@ -106,29 +112,64 @@ export default function ProductsPage() {
     setModal(p); 
   };
 
+  const handleCancelUpload = (type) => {
+    if (cancelTokens.current[type]) {
+      cancelTokens.current[type]();
+      cancelTokens.current[type] = null;
+    }
+    if (type === 'product') {
+      setUploadingImage(false);
+      setUploadProgress(prev => ({ ...prev, product: 0 }));
+    } else {
+      setUploadingSizeGuide(false);
+      setUploadProgress(prev => ({ ...prev, sizeguide: 0 }));
+    }
+  };
+
   const handleImageUpload = async (e, type = 'product') => {
     const file = e.target.files[0];
     if (!file || !selectedClubId) return;
 
-    if (type === 'product') setUploadingImage(true);
-    else setUploadingSizeGuide(true);
+    if (type === 'product') {
+      setUploadingImage(true);
+      setUploadProgress(prev => ({ ...prev, product: 5 }));
+    } else {
+      setUploadingSizeGuide(true);
+      setUploadProgress(prev => ({ ...prev, sizeguide: 5 }));
+    }
 
     try {
       const folder = type === 'product' ? 'products' : 'sizeguides';
       const prefix = type === 'product' ? 'prod_' : 'guide_';
-      const res = await storageService.uploadFile(file, `clubs/${selectedClubId}/${folder}/${prefix}`);
+      
+      const res = await storageService.uploadFileWithProgress(
+        file,
+        `clubs/${selectedClubId}/${folder}/${prefix}`,
+        {
+          onProgress: (pct) => {
+            setUploadProgress(prev => ({ ...prev, [type]: pct }));
+          },
+          setCancelHandler: (abortFn) => {
+            cancelTokens.current[type] = abortFn;
+          }
+        }
+      );
+      
       const url = res.url;
-
       if (type === 'product') {
         setForm(prev => ({ ...prev, imageUrl: url }));
       } else {
         setForm(prev => ({ ...prev, sizeGuideUrl: url }));
       }
     } catch (err) {
-      alert('Upload failed: ' + err.message);
+      if (err.name !== 'AbortError') {
+        alert('Upload failed: ' + err.message);
+      }
     } finally {
       if (type === 'product') setUploadingImage(false);
       else setUploadingSizeGuide(false);
+      cancelTokens.current[type] = null;
+      if (e.target) e.target.value = '';
     }
   };
 
@@ -164,7 +205,7 @@ export default function ProductsPage() {
       } else {
         await updateDoc(doc(db, 'clubs', selectedClubId, 'products', modal.id), data);
       }
-      await fetch();
+      await fetchProducts();
       setModal(null);
     } catch (err) { 
       alert(err.message); 
@@ -177,37 +218,45 @@ export default function ProductsPage() {
     if (!window.confirm(`Delete "${p.name}"?`)) return;
     try {
       await deleteDoc(doc(db, 'clubs', selectedClubId, 'products', p.id));
-      await fetch();
-    } catch (err) {
-      alert(err.message);
-    }
+      await fetchProducts();
+    } catch (err) { alert(err.message); }
   };
 
   return (
     <div>
       <div className="page-header">
-        <div><h1>Shop Inventory</h1><p>Manage club products, sizing variants, and guides</p></div>
-        <div className="page-actions">
-          <button className="btn btn-primary" onClick={openAdd}><Plus size={16} />Add Product</button>
+        <div>
+          <h2>Shop Inventory</h2>
+          <p className="text-muted">Manage club products, inventory levels, sizing charts, and merchandise</p>
         </div>
+        <button className="btn btn-primary" onClick={openAdd}><Plus size={16} /> Add Product</button>
+      </div>
+
+      <div className="table-controls">
+        <div className="search-box">
+          <Search size={16} className="search-icon" />
+          <input 
+            type="text" 
+            placeholder="Search products by title, category, description..." 
+            value={search} 
+            onChange={e => setSearch(e.target.value)} 
+          />
+        </div>
+        <span className="text-muted text-sm">{filtered.length} Product{filtered.length !== 1 ? 's' : ''}</span>
       </div>
 
       <div className="table-container">
-        <div className="table-toolbar">
-          <h3>{filtered.length} Product{filtered.length !== 1 ? 's' : ''}</h3>
-          <div className="search-box"><Search size={16} /><input placeholder="Search products…" value={search} onChange={e => setSearch(e.target.value)} /></div>
-        </div>
         <table>
           <thead>
             <tr>
-              <th>Image</th>
+              <th style={{ width: '60px' }}>Image</th>
               <th>Product</th>
               <th>Category</th>
               <th>Price</th>
-              <th>Sizing Variants</th>
+              <th>Sizing / Variants</th>
               <th>Visibility</th>
               <th>Status</th>
-              <th></th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -218,19 +267,43 @@ export default function ProductsPage() {
                 key={p.id} 
                 className="clickable-row"
                 onClick={(e) => {
-                  if (!e.target.closest('button')) setViewingProduct(p);
+                  if (!e.target.closest('button') && !e.target.closest('.product-thumb-clickable')) {
+                    setViewingProduct(p);
+                  }
                 }}
               >
                 <td>
-                  <div className="product-thumb">
-                    {p.imageUrl ? <img src={p.imageUrl} alt={p.name} /> : <ImageIcon size={20} className="text-muted" />}
+                  <div 
+                    className="product-thumb product-thumb-clickable" 
+                    title={p.imageUrl ? "Click to view full image" : "No image"}
+                    onClick={(e) => {
+                      if (p.imageUrl) {
+                        e.stopPropagation();
+                        setImageModal({ open: true, url: p.imageUrl, title: p.name });
+                      }
+                    }}
+                    style={{ cursor: p.imageUrl ? 'pointer' : 'default', position: 'relative' }}
+                  >
+                    {p.imageUrl ? (
+                      <img src={p.imageUrl} alt={p.name} />
+                    ) : (
+                      <ImageIcon size={20} className="text-muted" />
+                    )}
                   </div>
                 </td>
                 <td>
                   <strong>{p.name}</strong>
                   {!p.active && <span className="badge badge-danger ml-sm" style={{ fontSize: 10 }}>Hidden</span>}
                   {p.sizeGuideUrl && (
-                    <span className="ml-sm" style={{ color: 'var(--primary)' }} title="Has Size Guide">
+                    <span 
+                      className="ml-sm cursor-pointer" 
+                      style={{ color: 'var(--primary)' }} 
+                      title="Click to view Size Guide"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setImageModal({ open: true, url: p.sizeGuideUrl, title: `${p.name} - Size Guide` });
+                      }}
+                    >
                       <Ruler size={12} style={{ display: 'inline' }} />
                     </span>
                   )}
@@ -259,7 +332,19 @@ export default function ProductsPage() {
                 <td><span className={`badge ${p.inStock !== false ? 'badge-success' : 'badge-danger'}`}>{p.inStock !== false ? 'In Stock' : 'Out of Stock'}</span></td>
                 <td>
                   <div className="flex gap-sm">
-                    <button className="btn-icon" onClick={(e) => { e.stopPropagation(); setViewingProduct(p); }} title="View Product"><Eye size={15} /></button>
+                    {p.imageUrl && (
+                      <button 
+                        className="btn-icon" 
+                        onClick={(e) => { 
+                          e.stopPropagation(); 
+                          setImageModal({ open: true, url: p.imageUrl, title: p.name }); 
+                        }} 
+                        title="View Full Image"
+                      >
+                        <ImageIcon size={15} />
+                      </button>
+                    )}
+                    <button className="btn-icon" onClick={(e) => { e.stopPropagation(); setViewingProduct(p); }} title="View Product Details"><Eye size={15} /></button>
                     <button className="btn-icon" onClick={(e) => { e.stopPropagation(); openEdit(p); }} title="Edit Product"><Edit2 size={15} /></button>
                     <button className="btn-icon danger" onClick={(e) => { e.stopPropagation(); handleDelete(p); }} title="Delete Product"><Trash2 size={15} /></button>
                   </div>
@@ -270,56 +355,167 @@ export default function ProductsPage() {
         </table>
       </div>
 
+      {/* Edit / Add Modal */}
       <Modal open={!!modal} onClose={() => setModal(null)} title={modal === 'add' ? 'Add New Product' : 'Edit Product'} wide={true}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+        <div className="product-modal-grid">
           
           {/* Left Column: Product Details & Images */}
           <div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+            <div className="product-images-grid">
+              
+              {/* Product Image Uploader */}
               <div className="form-group">
-                <label>Product Image</label>
-                <div className="image-upload-zone" style={{ height: '120px' }}>
-                  {form.imageUrl ? (
-                    <div className="image-preview">
-                      <img src={form.imageUrl} alt="Preview" />
-                      <button className="btn-remove" onClick={() => setForm({ ...form, imageUrl: '' })}>×</button>
+                <label style={{ fontSize: '13px', fontWeight: 600 }}>Product Image</label>
+                <div className="image-upload-zone" style={{ minHeight: '130px', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
+                  {uploadingImage ? (
+                    <div style={{ width: '100%', padding: '12px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                        <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--primary)' }}>
+                          Uploading {uploadProgress.product}%
+                        </span>
+                        <button 
+                          type="button" 
+                          onClick={() => handleCancelUpload('product')}
+                          style={{
+                            background: '#fee2e2',
+                            color: '#dc2626',
+                            border: 'none',
+                            borderRadius: 4,
+                            padding: '2px 8px',
+                            fontSize: 11,
+                            fontWeight: 600,
+                            cursor: 'pointer'
+                          }}
+                        >
+                          ✕ Cancel
+                        </button>
+                      </div>
+                      <div style={{ width: '100%', height: 6, background: '#e2e8f0', borderRadius: 3, overflow: 'hidden' }}>
+                        <div 
+                          style={{ 
+                            width: `${uploadProgress.product}%`, 
+                            height: '100%', 
+                            background: 'linear-gradient(90deg, #10b981, #059669)',
+                            transition: 'width 0.15s ease-out'
+                          }} 
+                        />
+                      </div>
+                    </div>
+                  ) : form.imageUrl ? (
+                    <div className="image-preview" style={{ width: '100%', height: '100%', position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <img src={form.imageUrl} alt="Preview" style={{ maxHeight: '110px', maxWidth: '100%', objectFit: 'contain' }} />
+                      <div style={{ position: 'absolute', top: 4, right: 4, display: 'flex', gap: 4 }}>
+                        <button 
+                          type="button"
+                          className="btn-icon"
+                          style={{ background: 'rgba(15,23,42,0.75)', color: '#fff', padding: 5, borderRadius: 6, border: 'none', cursor: 'pointer' }}
+                          title="View Full Size"
+                          onClick={() => setImageModal({ open: true, url: form.imageUrl, title: form.name || 'Product Image' })}
+                        >
+                          <Eye size={13} />
+                        </button>
+                        <button 
+                          type="button"
+                          className="btn-remove" 
+                          title="Remove"
+                          onClick={() => setForm({ ...form, imageUrl: '' })}
+                        >
+                          ×
+                        </button>
+                      </div>
                     </div>
                   ) : (
-                    <label className="upload-placeholder">
+                    <label className="upload-placeholder" style={{ cursor: 'pointer', padding: '16px' }}>
                       <input type="file" accept="image/*" onChange={(e) => handleImageUpload(e, 'product')} hidden />
                       <div className="flex-column align-center">
-                        <Upload size={20} className="mb-xs" />
-                        <span style={{ fontSize: '12px' }}>{uploadingImage ? 'Uploading...' : 'Upload Image'}</span>
+                        <Upload size={20} className="mb-xs" style={{ color: 'var(--primary)' }} />
+                        <span style={{ fontSize: '12px', fontWeight: 600 }}>Upload Image</span>
+                        <span className="text-muted" style={{ fontSize: '10px' }}>PNG, JPG, WEBP</span>
                       </div>
                     </label>
                   )}
                 </div>
               </div>
 
+              {/* Size Guide Image Uploader */}
               <div className="form-group">
-                <label>Size Guide Image</label>
-                <div className="image-upload-zone" style={{ height: '120px' }}>
-                  {form.sizeGuideUrl ? (
-                    <div className="image-preview">
-                      <img src={form.sizeGuideUrl} alt="Size Guide Preview" />
-                      <button className="btn-remove" onClick={() => setForm({ ...form, sizeGuideUrl: '' })}>×</button>
+                <label style={{ fontSize: '13px', fontWeight: 600 }}>Size Guide Image</label>
+                <div className="image-upload-zone" style={{ minHeight: '130px', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
+                  {uploadingSizeGuide ? (
+                    <div style={{ width: '100%', padding: '12px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                        <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--primary)' }}>
+                          Uploading {uploadProgress.sizeguide}%
+                        </span>
+                        <button 
+                          type="button" 
+                          onClick={() => handleCancelUpload('sizeguide')}
+                          style={{
+                            background: '#fee2e2',
+                            color: '#dc2626',
+                            border: 'none',
+                            borderRadius: 4,
+                            padding: '2px 8px',
+                            fontSize: 11,
+                            fontWeight: 600,
+                            cursor: 'pointer'
+                          }}
+                        >
+                          ✕ Cancel
+                        </button>
+                      </div>
+                      <div style={{ width: '100%', height: 6, background: '#e2e8f0', borderRadius: 3, overflow: 'hidden' }}>
+                        <div 
+                          style={{ 
+                            width: `${uploadProgress.sizeguide}%`, 
+                            height: '100%', 
+                            background: 'linear-gradient(90deg, #10b981, #059669)',
+                            transition: 'width 0.15s ease-out'
+                          }} 
+                        />
+                      </div>
+                    </div>
+                  ) : form.sizeGuideUrl ? (
+                    <div className="image-preview" style={{ width: '100%', height: '100%', position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <img src={form.sizeGuideUrl} alt="Size Guide Preview" style={{ maxHeight: '110px', maxWidth: '100%', objectFit: 'contain' }} />
+                      <div style={{ position: 'absolute', top: 4, right: 4, display: 'flex', gap: 4 }}>
+                        <button 
+                          type="button"
+                          className="btn-icon"
+                          style={{ background: 'rgba(15,23,42,0.75)', color: '#fff', padding: 5, borderRadius: 6, border: 'none', cursor: 'pointer' }}
+                          title="View Full Size"
+                          onClick={() => setImageModal({ open: true, url: form.sizeGuideUrl, title: `${form.name || 'Product'} - Size Guide` })}
+                        >
+                          <Eye size={13} />
+                        </button>
+                        <button 
+                          type="button"
+                          className="btn-remove" 
+                          title="Remove"
+                          onClick={() => setForm({ ...form, sizeGuideUrl: '' })}
+                        >
+                          ×
+                        </button>
+                      </div>
                     </div>
                   ) : (
-                    <label className="upload-placeholder">
+                    <label className="upload-placeholder" style={{ cursor: 'pointer', padding: '16px' }}>
                       <input type="file" accept="image/*" onChange={(e) => handleImageUpload(e, 'sizeguide')} hidden />
                       <div className="flex-column align-center">
-                        <Upload size={20} className="mb-xs" />
-                        <span style={{ fontSize: '12px' }}>{uploadingSizeGuide ? 'Uploading...' : 'Upload Size Guide'}</span>
+                        <Upload size={20} className="mb-xs" style={{ color: 'var(--primary)' }} />
+                        <span style={{ fontSize: '12px', fontWeight: 600 }}>Upload Size Guide</span>
+                        <span className="text-muted" style={{ fontSize: '10px' }}>Optional chart</span>
                       </div>
                     </label>
                   )}
                 </div>
               </div>
+
             </div>
 
             <div className="form-group" style={{ marginTop: 12 }}>
               <label>Product Name</label>
-              <input className="form-control" value={form.name || ''} onChange={e => setForm({ ...form, name: e.target.value })} required />
+              <input className="form-control" value={form.name || ''} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="e.g. Official Match Jersey" required />
             </div>
             
             <div className="form-row">
@@ -341,7 +537,7 @@ export default function ProductsPage() {
 
             <div className="form-group">
               <label>Description</label>
-              <textarea className="form-control" rows={3} value={form.description || ''} onChange={e => setForm({ ...form, description: e.target.value })} />
+              <textarea className="form-control" rows={3} value={form.description || ''} onChange={e => setForm({ ...form, description: e.target.value })} placeholder="High quality breathable fabric..." />
             </div>
           </div>
 
@@ -403,9 +599,34 @@ export default function ProductsPage() {
         {viewingProduct && (
           <div>
             <div style={{ display: 'flex', gap: 20, marginBottom: 20, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-              <div style={{ width: 140, height: 140, borderRadius: 12, border: '1px solid var(--border)', background: '#F8FAFC', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+              <div 
+                style={{ 
+                  width: 140, 
+                  height: 140, 
+                  borderRadius: 12, 
+                  border: '1px solid var(--border)', 
+                  background: '#F8FAFC', 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  justifyContent: 'center', 
+                  overflow: 'hidden',
+                  cursor: viewingProduct.imageUrl ? 'pointer' : 'default',
+                  position: 'relative'
+                }}
+                onClick={() => {
+                  if (viewingProduct.imageUrl) {
+                    setImageModal({ open: true, url: viewingProduct.imageUrl, title: viewingProduct.name });
+                  }
+                }}
+                title={viewingProduct.imageUrl ? "Click to view full image" : ""}
+              >
                 {viewingProduct.imageUrl ? (
-                  <img src={viewingProduct.imageUrl} alt={viewingProduct.name} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                  <>
+                    <img src={viewingProduct.imageUrl} alt={viewingProduct.name} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                    <div style={{ position: 'absolute', bottom: 4, right: 4, background: 'rgba(15,23,42,0.7)', color: '#fff', padding: 4, borderRadius: 4, display: 'flex' }}>
+                      <Eye size={12} />
+                    </div>
+                  </>
                 ) : (
                   <ImageIcon size={48} className="text-muted" />
                 )}
@@ -451,10 +672,22 @@ export default function ProductsPage() {
 
             {viewingProduct.sizeGuideUrl && (
               <div style={{ borderTop: '1px solid var(--border)', paddingTop: 16, marginBottom: 16 }}>
-                <h4 style={{ fontSize: 14, fontWeight: 600, marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <Ruler size={16} /> Size Guide
-                </h4>
-                <div style={{ maxHeight: 220, overflow: 'auto', borderRadius: 8, border: '1px solid var(--border)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                  <h4 style={{ fontSize: 14, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6, margin: 0 }}>
+                    <Ruler size={16} /> Size Guide
+                  </h4>
+                  <button 
+                    type="button" 
+                    className="btn btn-sm btn-outline" 
+                    onClick={() => setImageModal({ open: true, url: viewingProduct.sizeGuideUrl, title: `${viewingProduct.name} - Size Guide` })}
+                  >
+                    <Eye size={12} className="mr-xs" /> View Full
+                  </button>
+                </div>
+                <div 
+                  style={{ maxHeight: 220, overflow: 'auto', borderRadius: 8, border: '1px solid var(--border)', cursor: 'pointer' }}
+                  onClick={() => setImageModal({ open: true, url: viewingProduct.sizeGuideUrl, title: `${viewingProduct.name} - Size Guide` })}
+                >
                   <img src={viewingProduct.sizeGuideUrl} alt="Size Guide" style={{ width: '100%', objectFit: 'contain' }} />
                 </div>
               </div>
@@ -469,6 +702,14 @@ export default function ProductsPage() {
           </div>
         )}
       </Modal>
+
+      {/* Global Image Lightbox Modal */}
+      <ImageModal 
+        isOpen={imageModal.open}
+        imageUrl={imageModal.url}
+        title={imageModal.title}
+        onClose={() => setImageModal({ open: false, url: '', title: '' })}
+      />
     </div>
   );
 }

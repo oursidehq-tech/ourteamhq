@@ -20,7 +20,10 @@ export default function UserCalendar() {
   const [selectedEventDetails, setSelectedEventDetails] = useState(null);
 
   const fetchCalendarData = async () => {
-    if (!selectedClubId) return;
+    if (!selectedClubId) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       const [eventsSnap, rostersSnap, tasksSnap] = await Promise.all([

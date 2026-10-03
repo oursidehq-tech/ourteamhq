@@ -17,7 +17,10 @@ export default function UserTraining() {
   const [selectedDrill, setSelectedDrill] = useState(null);
 
   const fetchDrills = async () => {
-    if (!selectedClubId) return;
+    if (!selectedClubId) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       const snap = await getDocs(collection(db, 'clubs', selectedClubId, 'drills'));

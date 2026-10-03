@@ -15,7 +15,10 @@ export default function UserTasks() {
   const [activeTab, setActiveTab] = useState('tasks'); // 'tasks', 'shifts', 'volunteer'
 
   const fetchTasksData = async () => {
-    if (!selectedClubId) return;
+    if (!selectedClubId) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       const [tasksSnap, rostersSnap] = await Promise.all([

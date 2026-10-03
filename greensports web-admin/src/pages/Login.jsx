@@ -4,15 +4,21 @@ import { useAuth } from '../context/AuthContext';
 import { Shield, KeyRound, Lock, User, UserPlus, LogIn, Sparkles, Trophy, Users, Mail, Phone, Eye, EyeOff, Building, MapPin, Activity } from 'lucide-react';
 
 export default function Login() {
-  const [activeTab, setActiveTab] = useState('signin'); // 'signin' or 'signup'
+  const [activeTab, setActiveTab] = useState('signin'); // 'signin', 'signup', or 'forgot'
   const [portalType, setPortalType] = useState('user'); // 'user' or 'admin'
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [pin, setPin] = useState('');
   const [loading, setLoading] = useState(false);
+  const [loadingMessage, setLoadingMessage] = useState('');
   const [step, setStep] = useState('login'); // 'login' or 'pin' (for admins)
   
+  // Forgot password state
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotLoading, setForgotLoading] = useState(false);
+  const [forgotSuccess, setForgotSuccess] = useState(false);
+
   // Sign up state wizard
   const [signupStep, setSignupStep] = useState(1);
   const [fullName, setFullName] = useState('');
@@ -25,37 +31,62 @@ export default function Login() {
   const [newClubSport, setNewClubSport] = useState('Soccer');
   const [newClubLocation, setNewClubLocation] = useState('');
 
-  const { login, signUp, joinClubWithCode, createClubOnboarding, profile, isSuperAdmin, isPinVerified, verifyPin, authError, setPortalMode } = useAuth();
+  const { login, signUp, resetPassword, joinClubWithCode, createClubOnboarding, profile, isSuperAdmin, isPinVerified, verifyPin, authError, setAuthError, setPortalMode } = useAuth();
   const navigate = useNavigate();
 
   const handleSignIn = async (e) => {
     e.preventDefault();
     setLoading(true);
+    setLoadingMessage(portalType === 'admin' ? 'Verifying admin credentials...' : 'Connecting to workspace...');
     
     if (portalType === 'admin') {
       if (step === 'login') {
         const ok = await login(email.trim(), password, false);
         if (ok) {
-          // Keep step as login, the AuthContext useEffect will switch to 'pin' if profile loaded and not pinVerified
+          setLoadingMessage('Credentials accepted. Preparing security check...');
+          // Keep loading until AuthContext useEffect transitions to 'pin' or dashboard
+        } else {
+          setLoading(false);
+          setLoadingMessage('');
         }
       } else {
         const ok = verifyPin(pin);
         if (ok) {
+          setLoadingMessage('PIN verified. Opening Admin Dashboard...');
           setPortalMode('admin');
           navigate('/dashboard');
         } else {
           alert('Invalid Security PIN. Please try again.');
+          setLoading(false);
+          setLoadingMessage('');
         }
       }
     } else {
       // User Portal
       const ok = await login(email.trim(), password, true);
       if (ok) {
+        setLoadingMessage('Login successful! Loading your dashboard...');
         setPortalMode('user');
         navigate('/dashboard');
+      } else {
+        setLoading(false);
+        setLoadingMessage('');
       }
     }
-    setLoading(false);
+  };
+
+  const handleForgotPassword = async (e) => {
+    e.preventDefault();
+    if (!forgotEmail.trim()) {
+      alert('Please enter your email address.');
+      return;
+    }
+    setForgotLoading(true);
+    const ok = await resetPassword(forgotEmail.trim());
+    if (ok) {
+      setForgotSuccess(true);
+    }
+    setForgotLoading(false);
   };
 
   const handleSignUpStep1 = (e) => {
@@ -74,6 +105,7 @@ export default function Login() {
   const handleSignUpSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
+    setLoadingMessage('Configuring account & synced profile...');
     
     try {
       const user = await signUp(signupEmail.trim(), signupPassword, fullName, phone, selectedRole);
@@ -82,30 +114,40 @@ export default function Login() {
           if (!newClubName) {
             alert('Please specify your club name.');
             setLoading(false);
+            setLoadingMessage('');
             return;
           }
+          setLoadingMessage('Creating club workspace...');
           const clubId = await createClubOnboarding(newClubName, newClubSport, newClubLocation);
           if (clubId) {
+            setLoadingMessage('Club created! Redirecting to dashboard...');
             setPortalMode('user');
             navigate('/dashboard');
-          }
-        } else {
-          if (!inviteCode) {
-            alert('Please enter a 6-digit invite code to join a club.');
-            setLoading(false);
             return;
           }
-          const club = await joinClubWithCode(inviteCode);
-          if (club) {
-            setPortalMode('user');
-            navigate('/dashboard');
+        } else {
+          if (inviteCode.trim()) {
+            setLoadingMessage('Validating invite code & joining club...');
+            const club = await joinClubWithCode(inviteCode.trim());
+            if (club) {
+              setLoadingMessage('Joined club successfully! Redirecting...');
+              setPortalMode('user');
+              navigate('/dashboard');
+              return;
+            }
           }
+          // If no code entered or skipped, proceed to workspace
+          setLoadingMessage('Profile ready! Entering workspace...');
+          setPortalMode('user');
+          navigate('/dashboard');
+          return;
         }
       }
     } catch (err) {
       alert(err.message || 'Onboarding failed.');
     }
     setLoading(false);
+    setLoadingMessage('');
   };
 
   useEffect(() => {
@@ -113,11 +155,15 @@ export default function Login() {
       if (portalType === 'admin') {
         if (!isPinVerified) {
           setStep('pin');
+          setLoading(false);
+          setLoadingMessage('');
         } else {
+          setLoadingMessage('Access verified. Redirecting...');
           setPortalMode('admin');
           navigate('/dashboard');
         }
       } else {
+        setLoadingMessage('Welcome back! Entering workspace...');
         setPortalMode('user');
         navigate('/dashboard');
       }
@@ -148,8 +194,32 @@ export default function Login() {
         transition: 'all 0.4s ease-in-out',
         margin: 'auto'
       }}>
+        {/* Back to Home Link */}
+        <div style={{ marginBottom: '16px', display: 'flex', justifyContent: 'flex-start' }}>
+          <button
+            type="button"
+            onClick={() => navigate('/')}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: '#94a3b8',
+              fontSize: '13px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '4px 0',
+              transition: 'color 0.2s'
+            }}
+            onMouseEnter={e => e.currentTarget.style.color = '#10b981'}
+            onMouseLeave={e => e.currentTarget.style.color = '#94a3b8'}
+          >
+            &larr; Back to Homepage
+          </button>
+        </div>
+
         {/* Brand Header */}
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: '32px', textAlign: 'center' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: '28px', textAlign: 'center' }}>
           <div style={{
             width: '64px',
             height: '64px',
@@ -173,7 +243,7 @@ export default function Login() {
         </div>
 
         {/* Action Tabs */}
-        {step !== 'pin' && (
+        {step !== 'pin' && activeTab !== 'forgot' && (
           <div style={{
             display: 'flex',
             background: 'rgba(255, 255, 255, 0.04)',
@@ -268,7 +338,7 @@ export default function Login() {
                 </div>
 
                 {authError && (
-                  <div style={{ padding: '12px', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid #ef4444', borderRadius: '8px', color: '#fca5a5', fontSize: '13px', marginBottom: '16px', textAlign: 'center' }}>
+                  <div style={{ padding: '12px 16px', background: 'rgba(239, 68, 68, 0.12)', border: '1px solid rgba(239, 68, 68, 0.25)', borderRadius: '12px', color: '#fca5a5', fontSize: '13px', marginBottom: '18px', textAlign: 'center', fontWeight: 500 }}>
                     {authError}
                   </div>
                 )}
@@ -296,7 +366,7 @@ export default function Login() {
                   />
                 </div>
 
-                <div style={{ marginBottom: '24px', position: 'relative' }}>
+                <div style={{ marginBottom: '12px', position: 'relative' }}>
                   <Lock size={18} style={{ position: 'absolute', left: '16px', top: '16px', color: '#64748b' }} />
                   <input
                     type={showPassword ? 'text' : 'password'}
@@ -334,6 +404,25 @@ export default function Login() {
                   </button>
                 </div>
 
+                {/* Forgot Password Toggle */}
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '22px' }}>
+                  <button
+                    type="button"
+                    onClick={() => { setActiveTab('forgot'); setAuthError(null); setForgotSuccess(false); setForgotEmail(email); }}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: '#10b981',
+                      fontSize: '13px',
+                      fontWeight: 500,
+                      cursor: 'pointer',
+                      padding: '2px 0'
+                    }}
+                  >
+                    Forgot password?
+                  </button>
+                </div>
+
                 <button
                   type="submit"
                   disabled={loading}
@@ -342,16 +431,34 @@ export default function Login() {
                     padding: '16px',
                     borderRadius: '14px',
                     border: 'none',
-                    background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                    background: loading ? 'rgba(16, 185, 129, 0.7)' : 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
                     color: '#ffffff',
                     fontWeight: 700,
                     fontSize: '15px',
-                    cursor: 'pointer',
+                    cursor: loading ? 'not-allowed' : 'pointer',
                     boxShadow: '0 4px 16px rgba(16, 185, 129, 0.25)',
-                    transition: 'all 0.3s'
+                    transition: 'all 0.3s',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '10px'
                   }}
                 >
-                  {loading ? 'Authenticating...' : portalType === 'admin' ? 'Verify Admin Account' : 'Access Member Workspace'}
+                  {loading ? (
+                    <>
+                      <div style={{
+                        width: '18px',
+                        height: '18px',
+                        border: '2px solid rgba(255, 255, 255, 0.35)',
+                        borderTopColor: '#ffffff',
+                        borderRadius: '50%',
+                        animation: 'spin 0.8s linear infinite'
+                      }} />
+                      <span>{loadingMessage || 'Authenticating...'}</span>
+                    </>
+                  ) : (
+                    portalType === 'admin' ? 'Verify Admin Account' : 'Access Member Workspace'
+                  )}
                 </button>
               </>
             ) : (
@@ -395,15 +502,33 @@ export default function Login() {
                     padding: '16px',
                     borderRadius: '14px',
                     border: 'none',
-                    background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                    background: loading ? 'rgba(16, 185, 129, 0.7)' : 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
                     color: '#ffffff',
                     fontWeight: 700,
                     fontSize: '15px',
-                    cursor: 'pointer',
-                    boxShadow: '0 4px 16px rgba(16, 185, 129, 0.25)'
+                    cursor: loading ? 'not-allowed' : 'pointer',
+                    boxShadow: '0 4px 16px rgba(16, 185, 129, 0.25)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '10px'
                   }}
                 >
-                  {loading ? 'Unlocking...' : 'Unlock Infrastructure Controls'}
+                  {loading ? (
+                    <>
+                      <div style={{
+                        width: '18px',
+                        height: '18px',
+                        border: '2px solid rgba(255, 255, 255, 0.35)',
+                        borderTopColor: '#ffffff',
+                        borderRadius: '50%',
+                        animation: 'spin 0.8s linear infinite'
+                      }} />
+                      <span>{loadingMessage || 'Unlocking...'}</span>
+                    </>
+                  ) : (
+                    'Unlock Infrastructure Controls'
+                  )}
                 </button>
                 <button
                   type="button"
@@ -424,6 +549,163 @@ export default function Login() {
                   Cancel
                 </button>
               </div>
+            )}
+          </form>
+        )}
+
+        {/* Tab content: Forgot Password */}
+        {activeTab === 'forgot' && (
+          <form onSubmit={handleForgotPassword}>
+            <div style={{ textAlign: 'center', marginBottom: '24px' }}>
+              <div style={{
+                width: '52px',
+                height: '52px',
+                borderRadius: '16px',
+                background: 'rgba(16, 185, 129, 0.12)',
+                border: '1px solid rgba(16, 185, 129, 0.25)',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#10b981',
+                marginBottom: '14px'
+              }}>
+                <KeyRound size={26} />
+              </div>
+              <h2 style={{ fontSize: '20px', fontWeight: 800, margin: '0 0 6px 0', color: '#ffffff' }}>
+                Reset Your Password
+              </h2>
+              <p style={{ color: '#94a3b8', fontSize: '13px', margin: 0, lineHeight: 1.5 }}>
+                Enter your account email to receive official password reset instructions via Resend & Firebase.
+              </p>
+            </div>
+
+            {forgotSuccess ? (
+              <div style={{
+                background: 'rgba(16, 185, 129, 0.12)',
+                border: '1px solid rgba(16, 185, 129, 0.3)',
+                borderRadius: '14px',
+                padding: '24px',
+                textAlign: 'center',
+                marginBottom: '24px'
+              }}>
+                <div style={{ color: '#10b981', fontWeight: 700, fontSize: '16px', marginBottom: '8px' }}>
+                  Reset Link Dispatched!
+                </div>
+                <p style={{ color: '#cbd5e1', fontSize: '13px', margin: '0 0 16px 0', lineHeight: 1.6 }}>
+                  Instructions have been sent to <strong>{forgotEmail}</strong>. Please check your inbox and follow the secure link to update your credentials.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => { setActiveTab('signin'); setForgotSuccess(false); setForgotEmail(''); }}
+                  style={{
+                    padding: '12px 24px',
+                    borderRadius: '10px',
+                    border: 'none',
+                    background: '#10b981',
+                    color: '#ffffff',
+                    fontWeight: 700,
+                    fontSize: '13px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Return to Sign In
+                </button>
+              </div>
+            ) : (
+              <>
+                {authError && (
+                  <div style={{
+                    padding: '12px 16px',
+                    background: 'rgba(239, 68, 68, 0.12)',
+                    border: '1px solid rgba(239, 68, 68, 0.25)',
+                    borderRadius: '12px',
+                    color: '#fca5a5',
+                    fontSize: '13px',
+                    marginBottom: '18px',
+                    textAlign: 'center',
+                    fontWeight: 500
+                  }}>
+                    {authError}
+                  </div>
+                )}
+
+                <div style={{ marginBottom: '20px', position: 'relative' }}>
+                  <Mail size={18} style={{ position: 'absolute', left: '16px', top: '16px', color: '#64748b' }} />
+                  <input
+                    type="email"
+                    placeholder="Enter your registered email"
+                    value={forgotEmail}
+                    onChange={e => setForgotEmail(e.target.value)}
+                    required
+                    style={{
+                      width: '100%',
+                      padding: '16px 16px 16px 48px',
+                      borderRadius: '14px',
+                      border: '1px solid rgba(255, 255, 255, 0.08)',
+                      background: 'rgba(255, 255, 255, 0.03)',
+                      color: '#ffffff',
+                      fontSize: '14px',
+                      outline: 'none',
+                      boxSizing: 'border-box'
+                    }}
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={forgotLoading}
+                  style={{
+                    width: '100%',
+                    padding: '16px',
+                    borderRadius: '14px',
+                    border: 'none',
+                    background: forgotLoading ? 'rgba(16, 185, 129, 0.7)' : 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                    color: '#ffffff',
+                    fontWeight: 700,
+                    fontSize: '15px',
+                    cursor: forgotLoading ? 'not-allowed' : 'pointer',
+                    boxShadow: '0 4px 16px rgba(16, 185, 129, 0.25)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '10px'
+                  }}
+                >
+                  {forgotLoading ? (
+                    <>
+                      <div style={{
+                        width: '18px',
+                        height: '18px',
+                        border: '2px solid rgba(255, 255, 255, 0.35)',
+                        borderTopColor: '#ffffff',
+                        borderRadius: '50%',
+                        animation: 'spin 0.8s linear infinite'
+                      }} />
+                      <span>Sending Instructions...</span>
+                    </>
+                  ) : (
+                    'Send Password Reset Link'
+                  )}
+                </button>
+
+                <div style={{ textAlign: 'center', marginTop: '18px' }}>
+                  <button
+                    type="button"
+                    onClick={() => { setActiveTab('signin'); setAuthError(null); }}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: '#94a3b8',
+                      fontSize: '13px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      padding: '6px'
+                    }}
+                  >
+                    &larr; Back to Sign In
+                  </button>
+                </div>
+              </>
             )}
           </form>
         )}
@@ -740,14 +1022,13 @@ export default function Login() {
                       Enter the 6-digit invitation code generated by your club manager to link your profile instantly.
                     </p>
 
-                    <div style={{ marginBottom: '24px', position: 'relative' }}>
+                    <div style={{ marginBottom: '12px', position: 'relative' }}>
                       <input
                         type="text"
                         placeholder="ABCDEF"
                         value={inviteCode}
                         onChange={e => setInviteCode(e.target.value.toUpperCase().trim())}
                         maxLength={6}
-                        required
                         style={{
                           width: '100%',
                           padding: '16px',
@@ -763,6 +1044,9 @@ export default function Login() {
                         }}
                       />
                     </div>
+                    <p style={{ color: '#64748b', fontSize: '12px', textAlign: 'center', margin: '0 0 20px 0', lineHeight: 1.5 }}>
+                      Don't have a code yet? Leave blank to continue — you can link to a club anytime from your dashboard.
+                    </p>
                   </div>
                 )}
 
@@ -791,36 +1075,36 @@ export default function Login() {
                       padding: '14px',
                       borderRadius: '14px',
                       border: 'none',
-                      background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                      background: loading ? 'rgba(16, 185, 129, 0.7)' : 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
                       color: '#ffffff',
                       fontWeight: 700,
-                      cursor: 'pointer',
-                      boxShadow: '0 4px 16px rgba(16, 185, 129, 0.25)'
+                      cursor: loading ? 'not-allowed' : 'pointer',
+                      boxShadow: '0 4px 16px rgba(16, 185, 129, 0.25)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '8px'
                     }}
                   >
-                    {loading ? 'Processing Onboarding...' : selectedRole === 'Club Owner' ? 'Build Club & Launch' : 'Join Club & Active Workspace'}
+                    {loading ? (
+                      <>
+                        <div style={{
+                          width: '16px',
+                          height: '16px',
+                          border: '2px solid rgba(255, 255, 255, 0.35)',
+                          borderTopColor: '#ffffff',
+                          borderRadius: '50%',
+                          animation: 'spin 0.8s linear infinite'
+                        }} />
+                        <span>{loadingMessage || 'Processing...'}</span>
+                      </>
+                    ) : (
+                      selectedRole === 'Club Owner' ? 'Build Club & Launch' : (inviteCode.trim() ? 'Join Club & Launch' : 'Enter Member Workspace')
+                    )}
                   </button>
                 </div>
               </form>
             )}
-          </div>
-        )}
-
-        {/* Global Error Banner */}
-        {authError && (
-          <div style={{
-            marginTop: '20px',
-            background: 'rgba(239, 68, 68, 0.12)',
-            border: '1px solid rgba(239, 68, 68, 0.25)',
-            borderRadius: '12px',
-            padding: '12px 16px',
-            color: '#fca5a5',
-            fontSize: '13px',
-            fontWeight: 500,
-            textAlign: 'center',
-            lineHeight: 1.4
-          }}>
-            {authError}
           </div>
         )}
 

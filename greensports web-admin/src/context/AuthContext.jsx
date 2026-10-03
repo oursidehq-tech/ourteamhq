@@ -1,7 +1,8 @@
 import { createContext, useContext, useState, useEffect } from 'react';
-import { signInWithEmailAndPassword, signOut, onAuthStateChanged, updateEmail, createUserWithEmailAndPassword } from 'firebase/auth';
+import { signInWithEmailAndPassword, signOut, onAuthStateChanged, updateEmail, createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
 import { doc, getDoc, setDoc, serverTimestamp, collection, getDocs, query, where, deleteDoc } from 'firebase/firestore';
 import { auth, db } from '../config/firebase';
+import { emailService } from '../services/emailService';
 
 const AuthContext = createContext(null);
 
@@ -205,38 +206,113 @@ export function AuthProvider({ children }) {
     resetState();
   };
 
-  // Sign up directly on the web
+  // Sign up directly on the web with full in-app sync
   const signUp = async (email, password, displayName, phone, role) => {
     setAuthError(null);
     try {
       const normalizedEmail = (email || '').trim().toLowerCase();
       const res = await createUserWithEmailAndPassword(auth, normalizedEmail, password);
       
+      // Update Auth display name
+      try {
+        await updateProfile(res.user, { displayName });
+      } catch (profileNameErr) {
+        console.warn('Update profile display name notice:', profileNameErr);
+      }
+
+      // Self-Healing: check if this email was already invited/registered inside clubs
+      let initialMemberships = [];
+      try {
+        const clubsSnap = await getDocs(collection(db, 'clubs'));
+        for (const clubDoc of clubsSnap.docs) {
+          const membersRef = collection(db, 'clubs', clubDoc.id, 'members');
+          const mSnap = await getDocs(query(membersRef, where('email', '==', normalizedEmail)));
+          if (!mSnap.empty) {
+            const mDoc = mSnap.docs[0];
+            const mData = mDoc.data();
+            const memberRole = mData.role || (role === 'Club Owner' ? 'Owner' : 'Player');
+            const memberRoles = mData.roles || [memberRole];
+            
+            // Link UID to member document
+            await setDoc(doc(db, 'clubs', clubDoc.id, 'members', res.user.uid), {
+              ...mData,
+              uid: res.user.uid,
+              userId: res.user.uid,
+              email: normalizedEmail,
+              displayName: displayName || mData.displayName || '',
+              joinedAt: mData.joinedAt || serverTimestamp(),
+              updatedAt: serverTimestamp()
+            }, { merge: true });
+
+            if (mDoc.id !== res.user.uid) {
+              await deleteDoc(mDoc.ref);
+            }
+
+            initialMemberships.push({
+              clubId: clubDoc.id,
+              clubName: clubDoc.data().name || 'Club',
+              role: memberRole,
+              roles: memberRoles,
+              joinedAt: new Date().toISOString()
+            });
+          }
+        }
+      } catch (linkingErr) {
+        console.warn('Auto-link memberships notice:', linkingErr);
+      }
+
       const userRef = doc(db, 'users', res.user.uid);
       const userProfile = {
         uid: res.user.uid,
+        profileOwnerUid: res.user.uid,
         email: normalizedEmail,
-        displayName,
+        displayName: displayName || normalizedEmail.split('@')[0],
         phone: phone || '',
+        avatarUrl: '',
         accountType: role === 'Club Owner' ? 'owner' : 'member',
-        clubMemberships: [],
+        followedClubIds: [],
+        clubMemberships: initialMemberships,
         createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
       };
       
       await setDoc(userRef, userProfile);
       setProfile(userProfile);
       setPortalMode('user');
       setIsPinVerified(true);
+      if (initialMemberships.length > 0) {
+        setUserClubIds(initialMemberships.map(m => m.clubId));
+      }
       return res.user;
     } catch (error) {
       if (error.code === 'auth/email-already-in-use') {
-        setAuthError('This email is already registered.');
+        setAuthError('This email is already registered. Please sign in or reset your password.');
       } else if (error.code === 'auth/weak-password') {
         setAuthError('Password must be at least 6 characters.');
+      } else if (error.code === 'auth/invalid-email') {
+        setAuthError('Please enter a valid email address.');
       } else {
         setAuthError(error.message);
       }
       return null;
+    }
+  };
+
+  // Password reset via Firebase Auth & Resend
+  const resetPassword = async (email) => {
+    setAuthError(null);
+    try {
+      await emailService.sendPasswordReset(email);
+      return true;
+    } catch (error) {
+      if (error.code === 'auth/user-not-found') {
+        setAuthError('No account found with this email address.');
+      } else if (error.code === 'auth/invalid-email') {
+        setAuthError('Please enter a valid email address.');
+      } else {
+        setAuthError(error.message || 'Failed to send password reset email.');
+      }
+      return false;
     }
   };
 
@@ -386,8 +462,8 @@ export function AuthProvider({ children }) {
     <AuthContext.Provider value={{
       user, profile, isAuthenticated, isSuperAdmin, isPinVerified,
       portalMode, setPortalMode, adminClubIds, ownerClubIds, userClubIds,
-      isOwnerOf, hasRole, loading, authError,
-      login, logout, verifyPin, signUp, joinClubWithCode, createClubOnboarding, updateUserEmail
+      isOwnerOf, hasRole, loading, authError, setAuthError,
+      login, logout, verifyPin, signUp, resetPassword, joinClubWithCode, createClubOnboarding, updateUserEmail
     }}>
       {children}
     </AuthContext.Provider>

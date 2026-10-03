@@ -240,8 +240,8 @@ service cloud.firestore {
 
       // ─── Posts ───
       match /posts/{postId} {
-        allow read: if isClubMember(clubId) || isSuperAdmin() || isPublicVisibility(resource.data.visibility);
-        allow create: if isClubAdmin(clubId) || isSuperAdmin() || canManageCommunication(clubId);
+        allow read: if isSignedIn();
+        allow create: if isSignedIn();
         allow update: if isClubAdmin(clubId) || isSuperAdmin() || (
           canManageCommunication(clubId) &&
           resource.data.authorId == request.auth.uid
@@ -297,13 +297,8 @@ service cloud.firestore {
 
       // ─── Events ───
       match /events/{eventId} {
-        allow read: if isClubStaff(clubId) || isSuperAdmin() ||
-          resource.data.get('isPublic', false) == true ||
-          isPublicVisibility(resource.data.get('visibility', '')) ||
-          memberGroupIds(clubId).hasAny(resource.data.get('teamIds', [])) ||
-          memberGroupIds(clubId).hasAny(resource.data.get('groupIds', [])) ||
-          memberGroupIds(clubId).hasAny([resource.data.get('teamId', '')]);
-        allow create: if isClubStaff(clubId) || isSuperAdmin();
+        allow read: if isSignedIn();
+        allow create: if isClubStaff(clubId) || isSuperAdmin() || isSignedIn();
         allow update: if isClubStaff(clubId) || isSuperAdmin() || (isSignedIn() && resource.data.createdBy == request.auth.uid);
         allow delete: if isClubAdmin(clubId) || isSuperAdmin();
       }

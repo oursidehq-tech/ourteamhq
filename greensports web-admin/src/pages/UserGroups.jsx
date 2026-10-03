@@ -15,7 +15,10 @@ export default function UserGroups() {
   const [selectedGroupId, setSelectedGroupId] = useState(null);
 
   const fetchGroupData = async () => {
-    if (!selectedClubId) return;
+    if (!selectedClubId) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       const [groupsSnap, membersSnap] = await Promise.all([
@@ -105,8 +108,18 @@ export default function UserGroups() {
         </div>
       </div>
 
-      {loading ? (
-        <p style={{ textAlign: 'center', color: 'var(--text-secondary)', padding: '40px' }}>Loading groups...</p>
+      {!selectedClubId ? (
+        <div className="card text-center" style={{ padding: '60px 20px', border: '1px solid var(--border)', background: '#ffffff', borderRadius: '16px' }}>
+          <Shield size={44} style={{ color: 'var(--primary)', marginBottom: '16px', opacity: 0.8 }} />
+          <h3 style={{ margin: 0, color: 'var(--text)' }}>No Club Selected</h3>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '14px', marginTop: '8px', maxWidth: '460px', marginInline: 'auto', lineHeight: 1.6 }}>
+            Please select a club workspace from the top bar to view committees and member directories.
+          </p>
+        </div>
+      ) : loading ? (
+        <div className="card text-center" style={{ padding: '60px 20px', border: '1px solid var(--border)', background: '#ffffff', borderRadius: '16px' }}>
+          <p style={{ textAlign: 'center', color: 'var(--text-secondary)', margin: 0 }}>Loading groups...</p>
+        </div>
       ) : myGroups.length === 0 ? (
         <div className="card text-center" style={{ padding: '60px 20px', border: '1px solid var(--border)', background: '#ffffff', borderRadius: '16px' }}>
           <Users size={40} style={{ color: 'var(--text-lighter)', marginBottom: '16px' }} />

@@ -1,6 +1,6 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Routes, Route, Navigate, Link, useNavigate } from 'react-router-dom';
-import { Sparkles, Users, CalendarDays, BadgeCheck, ShoppingBag, MessageCircle, TrendingUp, ArrowRight, PlayCircle, ChevronRight } from 'lucide-react';
+import { Sparkles, Users, CalendarDays, BadgeCheck, ShoppingBag, MessageCircle, TrendingUp, ArrowRight, PlayCircle, ChevronRight, Menu, X, Shield, Lock } from 'lucide-react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ClubProvider } from './context/ClubContext';
 import Layout from './components/Layout';
@@ -306,6 +306,7 @@ Website: oursidehq.com.au`;
 function LandingPage() {
   const navigate = useNavigate();
   const { isAuthenticated } = useAuth();
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -354,32 +355,65 @@ function LandingPage() {
 
   return (
     <div className="landing-shell">
-      <header className="landing-nav">
-        <div className="landing-brand">
-          <div className="landing-brand-mark">
-            <img src="/icon.png" alt="OurSideHQ logo" />
+      <header className="landing-nav-wrapper">
+        <div className="landing-nav">
+          <div className="landing-brand" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} style={{ cursor: 'pointer' }}>
+            <div className="landing-brand-mark">
+              <img src="/icon.png" alt="OurSideHQ logo" />
+            </div>
+            <div>
+              <div className="landing-brand-title">
+                <strong>OurSideHQ</strong>
+                <span className="landing-badge">PRO</span>
+              </div>
+              <span className="landing-brand-desc">Sports Club Operating System</span>
+            </div>
           </div>
-          <div>
-            <strong>OurSideHQ</strong>
-            <span>Sports club management platform</span>
+
+          <nav className="landing-links desktop-only">
+            <a href="#features">Features</a>
+            <a href="#about">About</a>
+            <Link to="/privacy">Privacy</Link>
+            <Link to="/terms">Terms</Link>
+          </nav>
+
+          <div className="landing-actions desktop-only">
+            <button className="landing-secondary" onClick={() => navigate('/login')}>
+              Sign In <ChevronRight size={15} />
+            </button>
+            <button className="landing-primary" onClick={() => navigate('/login')}>
+              Launch Platform <ArrowRight size={15} />
+            </button>
           </div>
+
+          <button 
+            className="landing-mobile-toggle"
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            aria-label="Toggle navigation menu"
+          >
+            {mobileMenuOpen ? <X size={22} /> : <Menu size={22} />}
+          </button>
         </div>
 
-        <nav className="landing-links">
-          <a href="#features">Features</a>
-          <a href="#about">About</a>
-          <Link to="/privacy">Privacy</Link>
-          <Link to="/terms">Terms</Link>
-        </nav>
-
-        <div className="landing-actions">
-          <button className="landing-secondary" onClick={() => navigate('/login')}>
-            Login <ChevronRight size={16} />
-          </button>
-          <button className="landing-primary" onClick={() => navigate('/login')}>
-            Open Admin <ArrowRight size={16} />
-          </button>
-        </div>
+        {/* Mobile Navigation Drawer */}
+        {mobileMenuOpen && (
+          <div className="landing-mobile-menu">
+            <nav className="landing-mobile-links">
+              <a href="#features" onClick={() => setMobileMenuOpen(false)}>Features</a>
+              <a href="#about" onClick={() => setMobileMenuOpen(false)}>About Platform</a>
+              <Link to="/privacy" onClick={() => setMobileMenuOpen(false)}>Privacy Policy</Link>
+              <Link to="/terms" onClick={() => setMobileMenuOpen(false)}>Terms of Service</Link>
+            </nav>
+            <div className="landing-mobile-actions">
+              <button className="landing-secondary" onClick={() => { setMobileMenuOpen(false); navigate('/login'); }}>
+                Sign In <ChevronRight size={16} />
+              </button>
+              <button className="landing-primary" onClick={() => { setMobileMenuOpen(false); navigate('/login'); }}>
+                Launch Platform <ArrowRight size={16} />
+              </button>
+            </div>
+          </div>
+        )}
       </header>
 
       <main>
@@ -527,7 +561,50 @@ import ClubInfo from './pages/ClubInfo';
 
 function ProtectedRoutes() {
   const { isAuthenticated, loading, portalMode } = useAuth();
-  if (loading) return <div className="login-page"><p>Loading…</p></div>;
+  if (loading) {
+    return (
+      <div style={{
+        minHeight: '100vh',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: 'linear-gradient(135deg, #07111a 0%, #0f172a 50%, #064e3b 100%)',
+        color: '#f8fafc',
+        fontFamily: 'Inter, sans-serif',
+        padding: '20px'
+      }}>
+        <div style={{
+          width: '72px',
+          height: '72px',
+          borderRadius: '20px',
+          background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          boxShadow: '0 0 35px rgba(16, 185, 129, 0.4)',
+          marginBottom: '24px',
+          animation: 'float 3s ease-in-out infinite'
+        }}>
+          <Shield size={36} color="#ffffff" />
+        </div>
+        <h2 style={{ fontSize: '20px', fontWeight: 700, margin: '0 0 8px 0', letterSpacing: '-0.3px' }}>
+          OurSideHQ
+        </h2>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#94a3b8', fontSize: '14px' }}>
+          <div style={{
+            width: '16px',
+            height: '16px',
+            border: '2px solid rgba(16, 185, 129, 0.25)',
+            borderTopColor: '#10b981',
+            borderRadius: '50%',
+            animation: 'spin 0.8s linear infinite'
+          }} />
+          <span>Connecting to your secure workspace...</span>
+        </div>
+      </div>
+    );
+  }
   if (!isAuthenticated) return <Navigate to="/login" replace />;
 
   return (

@@ -16,7 +16,10 @@ export default function UserOrders() {
   const [selectedOrder, setSelectedOrder] = useState(null);
 
   const fetchOrders = async () => {
-    if (!selectedClubId) return;
+    if (!selectedClubId) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       const snap = await getDocs(query(collection(db, 'clubs', selectedClubId, 'orders'), orderBy('createdAt', 'desc')));

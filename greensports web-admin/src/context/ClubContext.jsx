@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useContext, useState, useEffect, useMemo } from 'react';
 import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { useAuth } from './AuthContext';
@@ -6,7 +6,7 @@ import { useAuth } from './AuthContext';
 const ClubContext = createContext(null);
 
 export function ClubProvider({ children }) {
-  const { adminClubIds, userClubIds, isSuperAdmin, portalMode } = useAuth();
+  const { adminClubIds, userClubIds, isSuperAdmin, portalMode, profile, user } = useAuth();
   const [allClubs, setAllClubs] = useState([]);
   const [selectedClubId, setSelectedClubId] = useState('');
   const [loading, setLoading] = useState(true);
@@ -31,12 +31,22 @@ export function ClubProvider({ children }) {
     return () => typeof unsubscribe === 'function' && unsubscribe();
   }, []);
 
-  // Show only clubs depending on the active portal mode
-  const clubs = isSuperAdmin 
-    ? allClubs 
-    : (portalMode === 'admin' 
-        ? allClubs.filter(c => adminClubIds.includes(c.id)) 
-        : allClubs.filter(c => userClubIds.includes(c.id)));
+  const derivedUserClubIds = useMemo(() => {
+    if (userClubIds && userClubIds.length > 0) return userClubIds;
+    if (profile?.clubMemberships && Array.isArray(profile.clubMemberships)) {
+      return profile.clubMemberships.map(m => m.clubId).filter(Boolean);
+    }
+    return [];
+  }, [userClubIds, profile]);
+
+  // Show only clubs depending on the active portal mode, with owner fallback
+  const clubs = useMemo(() => {
+    if (isSuperAdmin) return allClubs;
+    if (portalMode === 'admin') {
+      return allClubs.filter(c => adminClubIds.includes(c.id) || (user?.uid && c.ownerId === user.uid));
+    }
+    return allClubs.filter(c => derivedUserClubIds.includes(c.id) || (user?.uid && c.ownerId === user.uid));
+  }, [isSuperAdmin, allClubs, portalMode, adminClubIds, derivedUserClubIds, user]);
 
   // Auto-select first accessible club
   useEffect(() => {

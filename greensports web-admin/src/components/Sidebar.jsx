@@ -5,7 +5,7 @@ import {
   LayoutDashboard, Building2, Users, UsersRound, FileText,
   Calendar, ShoppingBag, ClipboardList, PackageCheck, Wrench,
   Bell, Settings, LogOut, ListChecks, Shield, Crown, BarChart3,
-  Trophy, BookOpen, DollarSign, Award, ShieldCheck, ChevronLeft, ChevronRight
+  Trophy, BookOpen, DollarSign, Award, ShieldCheck, ChevronLeft, ChevronRight, X
 } from 'lucide-react';
 
 // Navigation sections for Administrators
@@ -114,9 +114,24 @@ export default function Sidebar({ isCollapsed, onToggle, mobileOpen, onCloseMobi
 
   return (
     <aside className={`sidebar ${isCollapsed ? 'collapsed' : ''} ${mobileOpen ? 'mobile-open' : ''}`}>
-      <button className="sidebar-toggle" onClick={onToggle}>
+      <button 
+        className="sidebar-toggle" 
+        onClick={onToggle}
+        title={isCollapsed ? "Expand sidebar (open)" : "Collapse sidebar (close)"}
+        aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+      >
         {isCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
       </button>
+
+      {mobileOpen && (
+        <button 
+          className="sidebar-mobile-close"
+          onClick={onCloseMobile}
+          aria-label="Close sidebar menu"
+        >
+          <X size={18} />
+        </button>
+      )}
 
       <div className="sidebar-brand">
         <img src="/icon.png" alt="OurSideHQ logo" style={{ width: 28, height: 28, borderRadius: 8, objectFit: 'cover' }} />

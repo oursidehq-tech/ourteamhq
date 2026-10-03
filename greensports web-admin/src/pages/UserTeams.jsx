@@ -15,7 +15,10 @@ export default function UserTeams() {
   const [selectedTeamId, setSelectedTeamId] = useState(null);
 
   const fetchTeamData = async () => {
-    if (!selectedClubId) return;
+    if (!selectedClubId) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       const [teamsSnap, membersSnap] = await Promise.all([
@@ -116,8 +119,18 @@ export default function UserTeams() {
         </div>
       </div>
 
-      {loading ? (
-        <p style={{ textAlign: 'center', color: 'var(--text-secondary)', padding: '40px' }}>Loading teams...</p>
+      {!selectedClubId ? (
+        <div className="card text-center" style={{ padding: '60px 20px', border: '1px solid var(--border)', background: '#ffffff', borderRadius: '16px' }}>
+          <Shield size={44} style={{ color: 'var(--primary)', marginBottom: '16px', opacity: 0.8 }} />
+          <h3 style={{ margin: 0, color: 'var(--text)' }}>No Club Selected</h3>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '14px', marginTop: '8px', maxWidth: '460px', marginInline: 'auto', lineHeight: 1.6 }}>
+            You haven't selected a club workspace yet. Please choose a club from the top-right context switcher or join a club with an invite code.
+          </p>
+        </div>
+      ) : loading ? (
+        <div className="card text-center" style={{ padding: '60px 20px', border: '1px solid var(--border)', background: '#ffffff', borderRadius: '16px' }}>
+          <p style={{ textAlign: 'center', color: 'var(--text-secondary)', margin: 0 }}>Loading teams...</p>
+        </div>
       ) : myTeams.length === 0 ? (
         <div className="card text-center" style={{ padding: '60px 20px', border: '1px solid var(--border)', background: '#ffffff', borderRadius: '16px' }}>
           <UsersRound size={40} style={{ color: 'var(--text-lighter)', marginBottom: '16px' }} />
