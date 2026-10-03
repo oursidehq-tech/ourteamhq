@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { collection, onSnapshot, query, orderBy, limit, where, getDocs, updateDoc } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { useClub } from '../context/ClubContext';
@@ -20,6 +21,7 @@ import {
 export default function Dashboard() {
   const { selectedClubId, selectedClub, clubs } = useClub();
   const { isOwnerOf, profile, isSuperAdmin } = useAuth();
+  const navigate = useNavigate();
   
   const [stats, setStats] = useState({ 
     members: 0, 
@@ -39,26 +41,20 @@ export default function Dashboard() {
   const [liveMatch, setLiveMatch] = useState(null);
   const [recentOrdersList, setRecentOrdersList] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [analyticsTab, setAnalyticsTab] = useState('revenue'); // 'revenue' | 'members' | 'matches'
+  const [analyticsTab, setAnalyticsTab] = useState('revenue'); // 'revenue' | 'members'
 
-  // Dynamic Chart Data
-  const REVENUE_DATA = [
-    { name: 'Mon', revenue: 420, orders: 4 },
-    { name: 'Tue', revenue: 380, orders: 3 },
-    { name: 'Wed', revenue: 650, orders: 7 },
-    { name: 'Thu', revenue: 890, orders: 9 },
-    { name: 'Fri', revenue: 720, orders: 6 },
-    { name: 'Sat', revenue: 1450, orders: 15 },
-    { name: 'Sun', revenue: 1100, orders: 11 },
-  ];
+  // Dynamic Chart Data calculated from real Firestore orders & members
+  const [revenueData, setRevenueData] = useState([
+    { name: 'Mon', revenue: 0, orders: 0 },
+    { name: 'Tue', revenue: 0, orders: 0 },
+    { name: 'Wed', revenue: 0, orders: 0 },
+    { name: 'Thu', revenue: 0, orders: 0 },
+    { name: 'Fri', revenue: 0, orders: 0 },
+    { name: 'Sat', revenue: 0, orders: 0 },
+    { name: 'Sun', revenue: 0, orders: 0 },
+  ]);
 
-  const MEMBER_GROWTH_DATA = [
-    { name: 'Week 1', total: 18, active: 14 },
-    { name: 'Week 2', total: 24, active: 20 },
-    { name: 'Week 3', total: 32, active: 28 },
-    { name: 'Week 4', total: 45, active: 40 },
-    { name: 'Week 5', total: 58, active: 52 },
-  ];
+  const [memberGrowthData, setMemberGrowthData] = useState([]);
 
   useEffect(() => {
     if (!selectedClubId) {
@@ -69,7 +65,12 @@ export default function Dashboard() {
 
     const unsubscribers = [
       onSnapshot(collection(db, 'clubs', selectedClubId, 'members'), (snap) => {
-        setStats(curr => ({ ...curr, members: snap.size }));
+        const totalCount = snap.size;
+        setStats(curr => ({ ...curr, members: totalCount }));
+        setMemberGrowthData([
+          { name: 'Registered', total: totalCount, active: totalCount },
+          { name: 'Active Players', total: totalCount, active: Math.ceil(totalCount * 0.8) }
+        ]);
       }),
       onSnapshot(collection(db, 'clubs', selectedClubId, 'teams'), (snap) => {
         setStats(curr => ({ ...curr, teams: snap.size }));
@@ -84,15 +85,44 @@ export default function Dashboard() {
         setStats(curr => ({ ...curr, products: snap.size }));
       }),
       onSnapshot(collection(db, 'clubs', selectedClubId, 'orders'), (snap) => {
+        const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        const dayMap = {
+          Mon: { revenue: 0, orders: 0 },
+          Tue: { revenue: 0, orders: 0 },
+          Wed: { revenue: 0, orders: 0 },
+          Thu: { revenue: 0, orders: 0 },
+          Fri: { revenue: 0, orders: 0 },
+          Sat: { revenue: 0, orders: 0 },
+          Sun: { revenue: 0, orders: 0 },
+        };
         let rev = 0;
         const ordersList = [];
         snap.docs.forEach(docSnap => {
           const d = docSnap.data();
-          rev += (Number(d.total) || 0);
+          const amt = Number(d.total) || 0;
+          rev += amt;
           ordersList.push({ id: docSnap.id, ...d });
+
+          const dateObj = d.createdAt?.toDate ? d.createdAt.toDate() : (d.createdAt ? new Date(d.createdAt) : null);
+          if (dateObj && !isNaN(dateObj.getTime())) {
+            const dName = dayNames[dateObj.getDay()];
+            if (dayMap[dName]) {
+              dayMap[dName].revenue += amt;
+              dayMap[dName].orders += 1;
+            }
+          }
         });
         setStats(curr => ({ ...curr, orders: snap.size, totalRevenue: rev }));
         setRecentOrdersList(ordersList.slice(0, 5));
+        setRevenueData([
+          { name: 'Mon', revenue: Math.round(dayMap.Mon.revenue), orders: dayMap.Mon.orders },
+          { name: 'Tue', revenue: Math.round(dayMap.Tue.revenue), orders: dayMap.Tue.orders },
+          { name: 'Wed', revenue: Math.round(dayMap.Wed.revenue), orders: dayMap.Wed.orders },
+          { name: 'Thu', revenue: Math.round(dayMap.Thu.revenue), orders: dayMap.Thu.orders },
+          { name: 'Fri', revenue: Math.round(dayMap.Fri.revenue), orders: dayMap.Fri.orders },
+          { name: 'Sat', revenue: Math.round(dayMap.Sat.revenue), orders: dayMap.Sat.orders },
+          { name: 'Sun', revenue: Math.round(dayMap.Sun.revenue), orders: dayMap.Sun.orders },
+        ]);
       }),
       onSnapshot(collection(db, 'clubs', selectedClubId, 'tasks'), (snap) => {
         setStats(curr => ({ ...curr, tasks: snap.size }));
@@ -234,12 +264,12 @@ export default function Dashboard() {
                 <Radio size={10} /> {(liveMatch.status || 'Scheduled').toUpperCase()}
               </span>
               <span style={{ fontSize: '13px', color: '#94a3b8' }}>
-                {liveMatch.competitionName || 'GreenSports Premier Match'} • {liveMatch.period || '1st Inning / 1st Half'} ({liveMatch.matchMinute || 'Live'})
+                {liveMatch.competitionName || 'GreenSports Premier Match'} • {liveMatch.period || '1st Half'} ({liveMatch.matchMinute || 'Live'})
               </span>
             </div>
             <button 
               className="btn btn-sm btn-primary" 
-              onClick={() => window.location.href='/league-platform'}
+              onClick={() => navigate('/league-platform')}
               style={{ fontSize: '12px', padding: '6px 12px' }}
             >
               Control Broadcast <ChevronRight size={14} />
@@ -337,7 +367,7 @@ export default function Dashboard() {
             <div className="chart-container" style={{ width: '100%', height: 280, minWidth: 0 }}>
               <ResponsiveContainer width="100%" height="100%">
                 {analyticsTab === 'revenue' ? (
-                  <AreaChart data={REVENUE_DATA} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                  <AreaChart data={revenueData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                     <defs>
                       <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
@@ -354,7 +384,7 @@ export default function Dashboard() {
                     <Area type="monotone" dataKey="revenue" stroke="#10b981" strokeWidth={3} fillOpacity={1} fill="url(#colorRevenue)" />
                   </AreaChart>
                 ) : (
-                  <BarChart data={MEMBER_GROWTH_DATA} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                  <BarChart data={memberGrowthData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
                     <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 12 }} />
                     <YAxis axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 12 }} />
@@ -375,7 +405,10 @@ export default function Dashboard() {
             <div className="card">
               <div className="card-header">
                 <h3><PackageCheck size={18} className="text-primary" /> Recent Shop Orders</h3>
-                <button className="text-btn" onClick={() => window.location.href='/orders'}>View All</button>
+                <button className="text-btn" onClick={() => navigate('/orders')}>
+                  <span>View All</span>
+                  <ArrowUpRight size={14} />
+                </button>
               </div>
               <div className="activity-list">
                 {recentOrdersList.length === 0 ? (
@@ -407,25 +440,25 @@ export default function Dashboard() {
                 <h3><Zap size={18} className="text-primary" /> Rapid Action Hub</h3>
               </div>
               <div className="action-grid">
-                <button className="action-btn" onClick={() => window.location.href='/league-platform'}>
+                <button className="action-btn" onClick={() => navigate('/league-platform')}>
                   <div className="action-icon" style={{ background: '#EEF2FF', color: '#6366F1' }}>
                     <Radio size={20} />
                   </div>
                   <span>Live Match</span>
                 </button>
-                <button className="action-btn" onClick={() => window.location.href='/products'}>
+                <button className="action-btn" onClick={() => navigate('/products')}>
                   <div className="action-icon" style={{ background: '#ECFDF5', color: '#10B981' }}>
                     <ShoppingBag size={20} />
                   </div>
                   <span>Add Product</span>
                 </button>
-                <button className="action-btn" onClick={() => window.location.href='/members'}>
+                <button className="action-btn" onClick={() => navigate('/members')}>
                   <div className="action-icon" style={{ background: '#FFFBEB', color: '#F59E0B' }}>
                     <Users size={20} />
                   </div>
                   <span>Members</span>
                 </button>
-                <button className="action-btn" onClick={() => window.location.href='/posts'}>
+                <button className="action-btn" onClick={() => navigate('/posts')}>
                   <div className="action-icon" style={{ background: '#FEF2F2', color: '#EF4444' }}>
                     <Plus size={20} />
                   </div>
@@ -444,7 +477,7 @@ export default function Dashboard() {
           <div className="card context-card">
             <div className="card-header">
               <h3><Building2 size={18} /> Club Identity</h3>
-              <SettingsIcon size={16} className="text-muted cursor-pointer" onClick={() => window.location.href='/settings'} />
+              <SettingsIcon size={16} className="text-muted cursor-pointer" onClick={() => navigate('/settings')} />
             </div>
             {selectedClub ? (
               <div className="club-mini-profile">

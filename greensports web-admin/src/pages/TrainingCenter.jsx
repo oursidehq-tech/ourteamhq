@@ -53,7 +53,7 @@ const TrainingCenter = () => {
     youtubeUrl: '',
     fileUrl: '',
     description: '',
-    duration: '10:00'
+    duration: ''
   });
 
   useEffect(() => {
@@ -83,7 +83,7 @@ const TrainingCenter = () => {
       youtubeUrl: '',
       fileUrl: '',
       description: '',
-      duration: '10:00'
+      duration: ''
     });
     setShowUpload(true);
   };
@@ -98,7 +98,7 @@ const TrainingCenter = () => {
       youtubeUrl: drill.youtubeUrl || '',
       fileUrl: drill.fileUrl || '',
       description: drill.description || '',
-      duration: drill.duration || '10:00'
+      duration: drill.duration || ''
     });
     setViewingDrill(null);
     setShowUpload(true);
@@ -459,15 +459,15 @@ const TrainingCenter = () => {
             <input 
               type="text" 
               className="form-control" 
-              placeholder="e.g. 4 Pass - Block, Face, Double X Y" 
+              placeholder="e.g. 1v1 Attacking & Crossing Drill" 
               value={form.title}
               onChange={e => setForm({ ...form, title: e.target.value })}
               required 
             />
           </div>
 
-          <div className="form-row">
-            <div className="form-group">
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '16px', marginBottom: '16px' }}>
+            <div className="form-group" style={{ margin: 0 }}>
               <label>Category</label>
               <select 
                 className="form-control"
@@ -480,7 +480,7 @@ const TrainingCenter = () => {
               </select>
             </div>
 
-            <div className="form-group">
+            <div className="form-group" style={{ margin: 0 }}>
               <label>Content Type</label>
               <select 
                 className="form-control"
@@ -493,8 +493,8 @@ const TrainingCenter = () => {
               </select>
             </div>
 
-            <div className="form-group">
-              <label>Duration / Length</label>
+            <div className="form-group" style={{ margin: 0 }}>
+              <label>Duration / Length (Optional)</label>
               <input 
                 type="text" 
                 className="form-control" 
@@ -508,8 +508,7 @@ const TrainingCenter = () => {
           {/* YouTube Link Field */}
           <div className="form-group">
             <label>YouTube URL {form.type === 'Youtube' ? <span className="text-danger">*</span> : '(Optional)'}</label>
-            <div className="flex gap-sm">
-              <Youtube size={22} className="text-danger mt-sm" />
+            <div className="flex gap-sm align-center">
               <input 
                 type="url" 
                 className="form-control" 
@@ -532,7 +531,7 @@ const TrainingCenter = () => {
             <input 
               type="text" 
               className="form-control" 
-              placeholder="https://.../tactical_guide.pdf or storage link" 
+              placeholder="https://.../tactical_guide.pdf or video storage link" 
               value={form.fileUrl}
               onChange={e => setForm({ ...form, fileUrl: e.target.value })}
             />

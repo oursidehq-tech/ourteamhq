@@ -1,34 +1,18 @@
 import { useEffect, useState } from 'react';
-import { collection, getDocs, query, orderBy, limit, where } from 'firebase/firestore';
+import { collection, getDocs } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { useClub } from '../context/ClubContext';
 import { 
-  BarChart3, Download, Users, ShoppingBag, 
-  Calendar, ListChecks, TrendingUp, PieChart as PieIcon,
-  FileSpreadsheet, Filter, RefreshCcw
+  Users, ShoppingBag, ListChecks, PieChart as PieIcon,
+  FileSpreadsheet, RefreshCcw, Download, Calendar
 } from 'lucide-react';
 import { 
-  LineChart, Line, XAxis, YAxis, CartesianGrid, 
+  XAxis, YAxis, CartesianGrid, 
   Tooltip, ResponsiveContainer, AreaChart, Area,
-  PieChart, Pie, Cell, BarChart, Bar
+  PieChart, Pie, Cell
 } from 'recharts';
 
 const COLORS = ['#6366F1', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6'];
-
-const MOCK_GROWTH = [
-  { month: 'Jan', members: 45 },
-  { month: 'Feb', members: 52 },
-  { month: 'Mar', members: 48 },
-  { month: 'Apr', members: 70 },
-  { month: 'May', members: 85 },
-  { month: 'Jun', members: 103 },
-];
-
-const MOCK_TASKS = [
-  { name: 'Pending', value: 40 },
-  { name: 'In Progress', value: 25 },
-  { name: 'Completed', value: 35 },
-];
 
 export default function ReportsPage() {
   const { selectedClubId, selectedClub } = useClub();
@@ -41,6 +25,8 @@ export default function ReportsPage() {
     tasks: 0,
   });
   const [loading, setLoading] = useState(true);
+  const [growthData, setGrowthData] = useState([]);
+  const [taskDistribution, setTaskDistribution] = useState([]);
 
   const fetchStats = async () => {
     if (!selectedClubId) return;
@@ -48,9 +34,12 @@ export default function ReportsPage() {
     try {
       const cols = ['members', 'teams', 'products', 'orders', 'tasks'];
       const counts = {};
+      const dataStore = {};
+
       await Promise.all(cols.map(async (col) => {
         const snap = await getDocs(collection(db, 'clubs', selectedClubId, col));
         counts[col] = snap.size;
+        dataStore[col] = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       }));
 
       setStats({
@@ -59,14 +48,82 @@ export default function ReportsPage() {
         products: counts.products,
         orders: counts.orders,
         tasks: counts.tasks,
+        revenue: (dataStore.orders || []).reduce((acc, o) => acc + (Number(o.total) || 0), 0)
       });
+
+      // Calculate Real Task Distribution
+      const taskDocs = dataStore.tasks || [];
+      let pendingTasks = 0;
+      let inProgressTasks = 0;
+      let completedTasks = 0;
+
+      taskDocs.forEach(t => {
+        const s = (t.status || '').toLowerCase();
+        if (s === 'completed' || s === 'done') completedTasks++;
+        else if (s === 'in_progress' || s === 'inprogress') inProgressTasks++;
+        else pendingTasks++;
+      });
+
+      const totalTasks = taskDocs.length;
+      if (totalTasks > 0) {
+        setTaskDistribution([
+          { name: 'Pending', value: Math.round((pendingTasks / totalTasks) * 100), count: pendingTasks },
+          { name: 'In Progress', value: Math.round((inProgressTasks / totalTasks) * 100), count: inProgressTasks },
+          { name: 'Completed', value: Math.round((completedTasks / totalTasks) * 100), count: completedTasks },
+        ]);
+      } else {
+        setTaskDistribution([
+          { name: 'Pending', value: 0, count: 0 },
+          { name: 'In Progress', value: 0, count: 0 },
+          { name: 'Completed', value: 0, count: 0 },
+        ]);
+      }
+
+      // Calculate Real Member Growth
+      const memberDocs = dataStore.members || [];
+      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      const now = new Date();
+      const monthBuckets = [];
+
+      for (let i = 5; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        monthBuckets.push({
+          month: months[d.getMonth()],
+          year: d.getFullYear(),
+          mIndex: d.getMonth(),
+          count: 0
+        });
+      }
+
+      memberDocs.forEach(m => {
+        const dateObj = m.joinedAt?.toDate ? m.joinedAt.toDate() : (m.createdAt ? new Date(m.createdAt) : null);
+        if (dateObj && !isNaN(dateObj.getTime())) {
+          const mIdx = dateObj.getMonth();
+          const bucket = monthBuckets.find(b => b.mIndex === mIdx);
+          if (bucket) bucket.count++;
+        }
+      });
+
+      let cumulative = 0;
+      const chartPoints = monthBuckets.map(b => {
+        cumulative += b.count;
+        return {
+          month: b.month,
+          members: cumulative || memberDocs.length
+        };
+      });
+
+      setGrowthData(chartPoints);
     } catch (err) {
       console.error('Fetch stats failed:', err);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
-  useEffect(() => { fetchStats(); }, [selectedClubId]);
+  useEffect(() => { 
+    fetchStats(); 
+  }, [selectedClubId]);
 
   const exportToCSV = (data, filename) => {
     const blob = new Blob([data], { type: 'text/csv;charset=utf-8;' });
@@ -81,7 +138,7 @@ export default function ReportsPage() {
     const snap = await getDocs(collection(db, 'clubs', selectedClubId, 'members'));
     const members = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     const csv = 'Name,Email,Roles,JoinedAt\n' + 
-      members.map(m => `"${m.displayName}","${m.email}","${(m.roles || [m.role]).join(';')}",${m.joinedAt?.toDate?.().toLocaleDateString()}`).join('\n');
+      members.map(m => `"${m.displayName || m.name || ''}","${m.email || ''}","${(m.roles || [m.role || 'Member']).join(';')}",${m.joinedAt?.toDate?.().toLocaleDateString() || ''}`).join('\n');
     exportToCSV(csv, `${selectedClub?.name || 'Club'}_Members.csv`);
   };
 
@@ -90,19 +147,22 @@ export default function ReportsPage() {
     const snap = await getDocs(collection(db, 'clubs', selectedClubId, 'orders'));
     const orders = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     const csv = 'OrderID,Customer,Email,Total,Status,Payment,Date\n' + 
-      orders.map(o => `"${o.id}","${o.userName}","${o.userEmail || o.email}",${o.total},"${o.status}","${o.paymentStatus}",${o.createdAt?.toDate?.().toLocaleDateString()}`).join('\n');
+      orders.map(o => `"${o.id}","${o.userName || ''}","${o.userEmail || o.email || ''}",${o.total || 0},"${o.status || 'Completed'}","${o.paymentStatus || 'Paid'}",${o.createdAt?.toDate?.().toLocaleDateString() || ''}`).join('\n');
     exportToCSV(csv, `${selectedClub?.name || 'Club'}_Orders.csv`);
   };
 
   return (
-    <div className="reports-container">
+    <div className="reports-container dashboard-container">
       <div className="page-header">
         <div>
-          <h1>Insights & Analytics</h1>
-          <p className="subtitle">Data-driven club performance metrics</p>
+          <h1>Insights &amp; Analytics</h1>
+          <p className="subtitle">Real club telemetry and data-driven performance metrics for {selectedClub?.name || 'Club'}.</p>
         </div>
         <div className="header-actions">
-          <button className="btn btn-outline" onClick={fetchStats}><RefreshCcw size={16} /> Refresh</button>
+          <button className="btn btn-outline" onClick={fetchStats}>
+            <RefreshCcw size={16} className={loading ? 'animate-spin' : ''} /> 
+            <span>Refresh</span>
+          </button>
         </div>
       </div>
 
@@ -110,27 +170,25 @@ export default function ReportsPage() {
         {/* Growth Chart */}
         <div className="card glass-card span-2">
           <div className="card-header">
-            <h3><Users size={18} /> Member Growth Trend</h3>
-            <div className="flex gap-sm">
-              <span className="badge badge-success">+15% vs Last Month</span>
-            </div>
+            <h3><Users size={18} className="text-primary" /> Member Growth Trend</h3>
+            <span className="badge badge-success">{stats.members} Total Roster</span>
           </div>
-          <div className="chart-container" style={{height: 350}}>
+          <div className="chart-container" style={{ height: 320 }}>
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={MOCK_GROWTH}>
+              <AreaChart data={growthData.length > 0 ? growthData : [{ month: 'Current', members: stats.members }]}>
                 <defs>
                   <linearGradient id="colorMembers" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#6366F1" stopOpacity={0.3}/>
-                    <stop offset="95%" stopColor="#6366F1" stopOpacity={0}/>
+                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
+                    <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
-                <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{fill: 'var(--text-secondary)', fontSize: 12}} />
-                <YAxis axisLine={false} tickLine={false} tick={{fill: 'var(--text-secondary)', fontSize: 12}} />
+                <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: 'var(--text-secondary)', fontSize: 12 }} />
+                <YAxis axisLine={false} tickLine={false} tick={{ fill: 'var(--text-secondary)', fontSize: 12 }} />
                 <Tooltip 
-                  contentStyle={{backgroundColor: 'var(--bg-card)', borderRadius: '12px', border: '1px solid var(--border)', boxShadow: 'var(--shadow-lg)'}}
+                  contentStyle={{ backgroundColor: 'var(--surface)', borderRadius: '12px', border: '1px solid var(--border)', boxShadow: 'var(--shadow-lg)' }}
                 />
-                <Area type="monotone" dataKey="members" stroke="#6366F1" strokeWidth={3} fillOpacity={1} fill="url(#colorMembers)" />
+                <Area type="monotone" dataKey="members" stroke="#10b981" strokeWidth={3} fillOpacity={1} fill="url(#colorMembers)" />
               </AreaChart>
             </ResponsiveContainer>
           </div>
@@ -139,59 +197,70 @@ export default function ReportsPage() {
         {/* Task Distribution */}
         <div className="card">
           <div className="card-header">
-            <h3><ListChecks size={18} /> Task Distribution</h3>
+            <h3><ListChecks size={18} className="text-primary" /> Task Distribution</h3>
+            <span className="badge badge-default">{stats.tasks} Tasks</span>
           </div>
-          <div className="chart-container" style={{height: 250, display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={MOCK_TASKS}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={60}
-                  outerRadius={80}
-                  paddingAngle={5}
-                  dataKey="value"
-                >
-                  {MOCK_TASKS.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip />
-              </PieChart>
-            </ResponsiveContainer>
+          <div className="chart-container" style={{ height: 220, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            {stats.tasks === 0 ? (
+              <div style={{ textAlign: 'center', color: 'var(--text-secondary)', padding: '20px' }}>
+                <p style={{ margin: 0, fontSize: 13 }}>No tasks recorded yet</p>
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={taskDistribution}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={55}
+                    outerRadius={75}
+                    paddingAngle={5}
+                    dataKey="value"
+                  >
+                    {taskDistribution.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip formatter={(val, name, item) => [`${val}% (${item.payload.count} tasks)`, name]} />
+                </PieChart>
+              </ResponsiveContainer>
+            )}
           </div>
           <div className="pie-legend">
-            {MOCK_TASKS.map((t, i) => (
+            {taskDistribution.map((t, i) => (
               <div key={t.name} className="legend-item">
-                <span className="dot" style={{background: COLORS[i]}}></span>
+                <span className="dot" style={{ background: COLORS[i] }}></span>
                 <span className="label">{t.name}</span>
-                <span className="value">{t.value}%</span>
+                <span className="value">{t.value}% ({t.count})</span>
               </div>
             ))}
           </div>
         </div>
 
-        {/* Data Management */}
-        <div className="card span-3">
+        {/* Export Center */}
+        <div className="card span-3" style={{ marginTop: '8px' }}>
           <div className="card-header">
-            <h3><FileSpreadsheet size={18} /> Export Center</h3>
-            <p className="subtitle">Securely download your club data</p>
+            <div>
+              <h3><FileSpreadsheet size={18} className="text-primary" /> Export Center</h3>
+              <p className="subtitle" style={{ margin: '4px 0 0 0', fontSize: 13, color: 'var(--text-secondary)' }}>
+                Securely export and download raw verified club data in CSV format.
+              </p>
+            </div>
           </div>
           <div className="export-grid">
             <div className="export-box" onClick={handleExportMembers}>
-              <div className="eb-icon"><Users size={24} /></div>
+              <div className="eb-icon"><Users size={22} /></div>
               <div className="eb-info">
-                <h4>Full Roster Export</h4>
-                <p>Includes all players, coaches, and contact info.</p>
+                <h4>Full Member Roster Export</h4>
+                <p>Includes all players, coaches, volunteers, and contact info.</p>
               </div>
               <Download size={20} className="eb-arrow" />
             </div>
             <div className="export-box" onClick={handleExportOrders}>
-              <div className="eb-icon"><ShoppingBag size={24} /></div>
+              <div className="eb-icon"><ShoppingBag size={22} /></div>
               <div className="eb-info">
-                <h4>Order History Export</h4>
-                <p>Complete record of all shop transactions.</p>
+                <h4>Order &amp; Merchandise History</h4>
+                <p>Complete historical log of all member shop transactions.</p>
               </div>
               <Download size={20} className="eb-arrow" />
             </div>

@@ -737,30 +737,44 @@ const Compliance = () => {
           </div>
 
           {/* Linking to Teams and Groups */}
-          <div className="card mb-md" style={{ background: 'var(--bg)', padding: '16px', borderRadius: 'var(--radius-sm)' }}>
+          <div className="card mb-md" style={{ background: '#f8fafc', padding: '16px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)' }}>
             <div className="flex justify-between items-center mb-sm">
               <label style={{ margin: 0, fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <Users size={16} className="text-primary" /> Target Assignment (Link to Teams or Groups)
               </label>
-              <div className="flex gap-sm">
-                <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '13px', cursor: 'pointer', margin: 0 }}>
-                  <input 
-                    type="radio" 
-                    name="targetType" 
-                    checked={formState.targetType === 'all'} 
-                    onChange={() => setFormState({ ...formState, targetType: 'all' })}
-                  />
+              <div style={{ display: 'flex', background: '#e2e8f0', padding: 3, borderRadius: 8, gap: 4 }}>
+                <button 
+                  type="button"
+                  style={{
+                    border: 'none',
+                    background: formState.targetType === 'all' ? 'var(--primary)' : 'transparent',
+                    color: formState.targetType === 'all' ? '#fff' : 'var(--text-secondary)',
+                    fontWeight: 700,
+                    fontSize: 12,
+                    padding: '5px 12px',
+                    borderRadius: 6,
+                    cursor: 'pointer'
+                  }}
+                  onClick={() => setFormState({ ...formState, targetType: 'all' })}
+                >
                   Entire Club
-                </label>
-                <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '13px', cursor: 'pointer', margin: 0 }}>
-                  <input 
-                    type="radio" 
-                    name="targetType" 
-                    checked={formState.targetType === 'specific'} 
-                    onChange={() => setFormState({ ...formState, targetType: 'specific' })}
-                  />
+                </button>
+                <button 
+                  type="button"
+                  style={{
+                    border: 'none',
+                    background: formState.targetType === 'specific' ? 'var(--primary)' : 'transparent',
+                    color: formState.targetType === 'specific' ? '#fff' : 'var(--text-secondary)',
+                    fontWeight: 700,
+                    fontSize: 12,
+                    padding: '5px 12px',
+                    borderRadius: 6,
+                    cursor: 'pointer'
+                  }}
+                  onClick={() => setFormState({ ...formState, targetType: 'specific' })}
+                >
                   Specific Teams / Groups
-                </label>
+                </button>
               </div>
             </div>
 
@@ -806,13 +820,13 @@ const Compliance = () => {
               </div>
               <div className="flex gap-xs" style={{ alignItems: 'center' }}>
                 <span className="text-xs text-muted" style={{ marginRight: '4px' }}>Quick Presets:</span>
-                <button type="button" className="btn btn-outline" style={{ padding: '4px 8px', fontSize: '11px' }} onClick={() => applyPresetPack('coach')}>
+                <button type="button" className="btn btn-outline btn-sm" style={{ padding: '4px 10px', fontSize: '11px', borderRadius: '8px' }} onClick={() => applyPresetPack('coach')}>
                   + Coach Pack
                 </button>
-                <button type="button" className="btn btn-outline" style={{ padding: '4px 8px', fontSize: '11px' }} onClick={() => applyPresetPack('volunteer')}>
+                <button type="button" className="btn btn-outline btn-sm" style={{ padding: '4px 10px', fontSize: '11px', borderRadius: '8px' }} onClick={() => applyPresetPack('volunteer')}>
                   + Volunteer Pack
                 </button>
-                <button type="button" className="btn btn-outline" style={{ padding: '4px 8px', fontSize: '11px' }} onClick={() => applyPresetPack('player')}>
+                <button type="button" className="btn btn-outline btn-sm" style={{ padding: '4px 10px', fontSize: '11px', borderRadius: '8px' }} onClick={() => applyPresetPack('player')}>
                   + Player Pack
                 </button>
               </div>
@@ -820,10 +834,10 @@ const Compliance = () => {
 
             {/* Spreadsheet Table */}
             <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', overflowX: 'auto', background: '#fff' }}>
-              <table style={{ margin: 0, minWidth: '700px' }}>
+              <table className="compliance-matrix-table" style={{ margin: 0, minWidth: '700px' }}>
                 <thead>
-                  <tr style={{ background: 'var(--bg)' }}>
-                    <th style={{ width: '30px', padding: '10px' }}>#</th>
+                  <tr>
+                    <th style={{ width: '30px' }}>#</th>
                     <th style={{ minWidth: '220px' }}>Requirement / Checklist Item</th>
                     <th style={{ width: '150px' }}>Type</th>
                     <th style={{ width: '100px', textAlign: 'center' }}>Mandatory</th>
@@ -835,26 +849,24 @@ const Compliance = () => {
                 <tbody>
                   {formState.requirements.map((row, index) => (
                     <tr key={index}>
-                      <td style={{ fontWeight: 600, color: 'var(--text-secondary)', padding: '8px' }}>
+                      <td style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>
                         {index + 1}
                       </td>
-                      <td style={{ padding: '8px' }}>
+                      <td>
                         <input 
                           type="text" 
                           className="form-control" 
                           placeholder="e.g. Working With Children Check (WWCC)"
                           value={row.name}
                           onChange={(e) => updateRequirementRow(index, 'name', e.target.value)}
-                          style={{ fontSize: '13px', padding: '6px 10px' }}
                           required
                         />
                       </td>
-                      <td style={{ padding: '8px' }}>
+                      <td>
                         <select 
                           className="form-control"
                           value={row.type}
                           onChange={(e) => updateRequirementRow(index, 'type', e.target.value)}
-                          style={{ fontSize: '13px', padding: '6px 10px' }}
                         >
                           <option value="Certificate">Certificate</option>
                           <option value="Police Clearance">Police Clearance</option>
@@ -865,33 +877,30 @@ const Compliance = () => {
                           <option value="Other">Other</option>
                         </select>
                       </td>
-                      <td style={{ textAlign: 'center', padding: '8px' }}>
+                      <td style={{ textAlign: 'center' }}>
                         <input 
                           type="checkbox" 
                           checked={row.mandatory}
                           onChange={(e) => updateRequirementRow(index, 'mandatory', e.target.checked)}
-                          style={{ width: '16px', height: '16px', cursor: 'pointer' }}
                         />
                       </td>
-                      <td style={{ textAlign: 'center', padding: '8px' }}>
+                      <td style={{ textAlign: 'center' }}>
                         <input 
                           type="checkbox" 
                           checked={row.expiryRequired}
                           onChange={(e) => updateRequirementRow(index, 'expiryRequired', e.target.checked)}
-                          style={{ width: '16px', height: '16px', cursor: 'pointer' }}
                         />
                       </td>
-                      <td style={{ padding: '8px' }}>
+                      <td>
                         <input 
                           type="text" 
                           className="form-control" 
-                          placeholder="Instructions for user..."
+                          placeholder="Instructions for staff or player..."
                           value={row.notes || ''}
                           onChange={(e) => updateRequirementRow(index, 'notes', e.target.value)}
-                          style={{ fontSize: '12px', padding: '6px 10px' }}
                         />
                       </td>
-                      <td style={{ textAlign: 'center', padding: '8px' }}>
+                      <td style={{ textAlign: 'center' }}>
                         <button 
                           type="button" 
                           className="btn-icon danger" 
@@ -908,12 +917,11 @@ const Compliance = () => {
               </table>
             </div>
 
-            <div style={{ marginTop: '10px' }}>
+            <div style={{ marginTop: '12px' }}>
               <button 
                 type="button" 
-                className="btn btn-outline" 
+                className="btn btn-outline btn-sm" 
                 onClick={addRequirementRow}
-                style={{ padding: '6px 14px', fontSize: '13px' }}
               >
                 <Plus size={14} /> Add Requirement Item
               </button>
