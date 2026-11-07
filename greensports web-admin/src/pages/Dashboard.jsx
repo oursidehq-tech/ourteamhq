@@ -1,163 +1,215 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { collection, onSnapshot, query, orderBy, limit, where, getDocs, updateDoc } from 'firebase/firestore';
+import { collection, onSnapshot, query, orderBy, limit, where } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { useClub } from '../context/ClubContext';
 import { useAuth } from '../context/AuthContext';
 import StatsCard from '../components/StatsCard';
-import { 
-  Building2, Users, UsersRound, FileText, Calendar, 
-  ShoppingBag, PackageCheck, ListChecks, Crown, Shield, 
-  TrendingUp, ArrowUpRight, Zap, Plus, Download, 
-  Settings as SettingsIcon, Bell, Radio, Trophy, DollarSign,
-  Activity, CheckCircle2, ChevronRight, Eye
+import {
+  Building2, Users, UsersRound, Calendar, ShoppingBag, PackageCheck,
+  ListChecks, Shield, TrendingUp, ArrowUpRight, Zap, Plus,
+  Settings as SettingsIcon, Radio, Trophy, DollarSign, ChevronRight,
+  RefreshCw, Clock, MapPin, Repeat, AlertCircle, Newspaper, Boxes,
+  UserCheck, ArrowRight
 } from 'lucide-react';
-import { 
-  LineChart, Line, XAxis, YAxis, CartesianGrid, 
-  Tooltip, ResponsiveContainer, AreaChart, Area,
-  BarChart, Bar, Legend
+import {
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
+  ResponsiveContainer, BarChart, Bar
 } from 'recharts';
+import {
+  buildOccurrenceDates,
+  hasRecurrence,
+  todayIsoDate,
+  addDaysToIsoDate,
+  parseIsoDate,
+} from '../utils/recurrence';
+
+const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+const toDate = (value) => {
+  if (!value) return null;
+  if (typeof value?.toDate === 'function') return value.toDate();
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
+};
+
+const formatMoney = (value) => {
+  const n = Number(value) || 0;
+  if (n >= 1000000) return `$${(n / 1000000).toFixed(1)}M`;
+  if (n >= 10000) return `$${(n / 1000).toFixed(1)}k`;
+  return `$${n.toFixed(2)}`;
+};
+
+const formatShortDate = (isoDate) => {
+  const d = parseIsoDate(isoDate);
+  if (!d) return 'Date TBC';
+  return `${DAY_NAMES[d.getDay()]} ${d.getDate()} ${MONTH_SHORT[d.getMonth()]}`;
+};
+
+const formatEventTime = (event) => {
+  if (event?.isAllDay) return 'All day';
+  const start = event?.startTime || event?.time || '';
+  if (!start) return 'Time TBC';
+  return event?.endTime ? `${start} – ${event.endTime}` : start;
+};
+
+const ROLE_COLORS = {
+  Player: '#6366F1',
+  Parent: '#8B5CF6',
+  Coach: '#10B981',
+  Manager: '#F59E0B',
+  Volunteer: '#06B6D4',
+  Admin: '#EF4444',
+  Registrar: '#EC4899',
+  'Shop Manager': '#14B8A6',
+  Owner: '#0F172A',
+};
 
 export default function Dashboard() {
-  const { selectedClubId, selectedClub, clubs } = useClub();
-  const { isOwnerOf, profile, isSuperAdmin } = useAuth();
+  const { selectedClubId, selectedClub } = useClub();
+  const { isSuperAdmin } = useAuth();
   const navigate = useNavigate();
-  
-  const [stats, setStats] = useState({ 
-    members: 0, 
-    teams: 0, 
-    posts: 0, 
-    events: 0, 
-    products: 0, 
-    orders: 0, 
+
+  const [stats, setStats] = useState({
+    members: 0,
+    teams: 0,
+    posts: 0,
+    events: 0,
+    products: 0,
+    orders: 0,
     tasks: 0,
     totalRevenue: 0,
-    liveMatchesCount: 0
+    liveMatchesCount: 0,
   });
 
-  const [platformStats, setPlatformStats] = useState({ clubs: 0, users: 0, totalOrders: 0, recentSignups: [] });
+  const [platformStats, setPlatformStats] = useState({ clubs: 0, users: 0 });
   const [approvals, setApprovals] = useState({ orders: [], tasks: [] });
   const [recentMatches, setRecentMatches] = useState([]);
   const [liveMatch, setLiveMatch] = useState(null);
   const [recentOrdersList, setRecentOrdersList] = useState([]);
+  const [rawOrders, setRawOrders] = useState([]);
+  const [rawMembers, setRawMembers] = useState([]);
+  const [rawEvents, setRawEvents] = useState([]);
+  const [rawTasks, setRawTasks] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [analyticsTab, setAnalyticsTab] = useState('revenue'); // 'revenue' | 'members'
+  const [analyticsTab, setAnalyticsTab] = useState('revenue');
 
-  // Dynamic Chart Data calculated from real Firestore orders & members
-  const [revenueData, setRevenueData] = useState([
-    { name: 'Mon', revenue: 0, orders: 0 },
-    { name: 'Tue', revenue: 0, orders: 0 },
-    { name: 'Wed', revenue: 0, orders: 0 },
-    { name: 'Thu', revenue: 0, orders: 0 },
-    { name: 'Fri', revenue: 0, orders: 0 },
-    { name: 'Sat', revenue: 0, orders: 0 },
-    { name: 'Sun', revenue: 0, orders: 0 },
-  ]);
-
-  const [memberGrowthData, setMemberGrowthData] = useState([]);
+  const [revenueData, setRevenueData] = useState(
+    DAY_NAMES.slice(1).concat(DAY_NAMES[0]).map((name) => ({ name, revenue: 0, orders: 0 }))
+  );
 
   useEffect(() => {
     if (!selectedClubId) {
       setLoading(false);
-      return;
+      return undefined;
     }
     setLoading(true);
 
     const unsubscribers = [
       onSnapshot(collection(db, 'clubs', selectedClubId, 'members'), (snap) => {
-        const totalCount = snap.size;
-        setStats(curr => ({ ...curr, members: totalCount }));
-        setMemberGrowthData([
-          { name: 'Registered', total: totalCount, active: totalCount },
-          { name: 'Active Players', total: totalCount, active: Math.ceil(totalCount * 0.8) }
-        ]);
+        const members = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        setRawMembers(members);
+        setStats((curr) => ({ ...curr, members: snap.size }));
       }),
       onSnapshot(collection(db, 'clubs', selectedClubId, 'teams'), (snap) => {
-        setStats(curr => ({ ...curr, teams: snap.size }));
+        setStats((curr) => ({ ...curr, teams: snap.size }));
       }),
       onSnapshot(collection(db, 'clubs', selectedClubId, 'posts'), (snap) => {
-        setStats(curr => ({ ...curr, posts: snap.size }));
+        setStats((curr) => ({ ...curr, posts: snap.size }));
       }),
       onSnapshot(collection(db, 'clubs', selectedClubId, 'events'), (snap) => {
-        setStats(curr => ({ ...curr, events: snap.size }));
+        setRawEvents(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+        setStats((curr) => ({ ...curr, events: snap.size }));
       }),
       onSnapshot(collection(db, 'clubs', selectedClubId, 'products'), (snap) => {
-        setStats(curr => ({ ...curr, products: snap.size }));
+        setStats((curr) => ({ ...curr, products: snap.size }));
       }),
       onSnapshot(collection(db, 'clubs', selectedClubId, 'orders'), (snap) => {
-        const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-        const dayMap = {
-          Mon: { revenue: 0, orders: 0 },
-          Tue: { revenue: 0, orders: 0 },
-          Wed: { revenue: 0, orders: 0 },
-          Thu: { revenue: 0, orders: 0 },
-          Fri: { revenue: 0, orders: 0 },
-          Sat: { revenue: 0, orders: 0 },
-          Sun: { revenue: 0, orders: 0 },
-        };
-        let rev = 0;
-        const ordersList = [];
-        snap.docs.forEach(docSnap => {
-          const d = docSnap.data();
-          const amt = Number(d.total) || 0;
-          rev += amt;
-          ordersList.push({ id: docSnap.id, ...d });
+        const orders = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        const rev = orders.reduce((sum, o) => sum + (Number(o.total) || 0), 0);
 
-          const dateObj = d.createdAt?.toDate ? d.createdAt.toDate() : (d.createdAt ? new Date(d.createdAt) : null);
-          if (dateObj && !isNaN(dateObj.getTime())) {
-            const dName = dayNames[dateObj.getDay()];
-            if (dayMap[dName]) {
-              dayMap[dName].revenue += amt;
-              dayMap[dName].orders += 1;
-            }
+        // Build a rolling 7-day revenue series ending today.
+        const buckets = {};
+        for (let i = 6; i >= 0; i -= 1) {
+          const day = new Date();
+          day.setDate(day.getDate() - i);
+          const key = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
+          buckets[key] = { name: DAY_NAMES[day.getDay()], revenue: 0, orders: 0 };
+        }
+        orders.forEach((o) => {
+          const created = toDate(o.createdAt);
+          if (!created) return;
+          const key = `${created.getFullYear()}-${String(created.getMonth() + 1).padStart(2, '0')}-${String(created.getDate()).padStart(2, '0')}`;
+          if (buckets[key]) {
+            buckets[key].revenue += Number(o.total) || 0;
+            buckets[key].orders += 1;
           }
         });
-        setStats(curr => ({ ...curr, orders: snap.size, totalRevenue: rev }));
-        setRecentOrdersList(ordersList.slice(0, 5));
-        setRevenueData([
-          { name: 'Mon', revenue: Math.round(dayMap.Mon.revenue), orders: dayMap.Mon.orders },
-          { name: 'Tue', revenue: Math.round(dayMap.Tue.revenue), orders: dayMap.Tue.orders },
-          { name: 'Wed', revenue: Math.round(dayMap.Wed.revenue), orders: dayMap.Wed.orders },
-          { name: 'Thu', revenue: Math.round(dayMap.Thu.revenue), orders: dayMap.Thu.orders },
-          { name: 'Fri', revenue: Math.round(dayMap.Fri.revenue), orders: dayMap.Fri.orders },
-          { name: 'Sat', revenue: Math.round(dayMap.Sat.revenue), orders: dayMap.Sat.orders },
-          { name: 'Sun', revenue: Math.round(dayMap.Sun.revenue), orders: dayMap.Sun.orders },
-        ]);
+
+        setRawOrders(orders);
+        setStats((curr) => ({ ...curr, orders: snap.size, totalRevenue: rev }));
+        setRecentOrdersList(
+          [...orders]
+            .sort((a, b) => (toDate(b.createdAt)?.getTime() || 0) - (toDate(a.createdAt)?.getTime() || 0))
+            .slice(0, 5)
+        );
+        setRevenueData(
+          Object.values(buckets).map((b) => ({
+            name: b.name,
+            revenue: Math.round(b.revenue),
+            orders: b.orders,
+          }))
+        );
       }),
       onSnapshot(collection(db, 'clubs', selectedClubId, 'tasks'), (snap) => {
-        setStats(curr => ({ ...curr, tasks: snap.size }));
+        setRawTasks(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+        setStats((curr) => ({ ...curr, tasks: snap.size }));
       }),
-      // Pending Approvals
-      onSnapshot(query(collection(db, 'clubs', selectedClubId, 'orders'), where('status', '==', 'pending'), limit(4)), (snap) => {
-        setApprovals(curr => ({ ...curr, orders: snap.docs.map(d => ({ id: d.id, ...d.data() })) }));
-      }),
-      onSnapshot(query(collection(db, 'clubs', selectedClubId, 'tasks'), where('status', '==', 'pending'), limit(4)), (snap) => {
-        setApprovals(curr => ({ ...curr, tasks: snap.docs.map(d => ({ id: d.id, ...d.data() })) }));
-      }),
-      // Live Fixtures & Matches
-      onSnapshot(collection(db, 'clubs', selectedClubId, 'leagueFixtures'), (snap) => {
-        const matches = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        const liveOne = matches.find(m => (m.status || '').toLowerCase() === 'live' || (m.status || '').toLowerCase() === 'inprogress');
-        setLiveMatch(liveOne || matches[0] || null);
-        setStats(curr => ({ 
-          ...curr, 
-          liveMatchesCount: matches.filter(m => (m.status || '').toLowerCase() === 'live').length 
-        }));
-        setRecentMatches(matches.slice(0, 4));
-        setLoading(false);
-      })
+      onSnapshot(
+        query(collection(db, 'clubs', selectedClubId, 'orders'), where('status', '==', 'pending'), limit(4)),
+        (snap) => {
+          setApprovals((curr) => ({ ...curr, orders: snap.docs.map((d) => ({ id: d.id, ...d.data() })) }));
+        },
+        () => {}
+      ),
+      onSnapshot(
+        query(collection(db, 'clubs', selectedClubId, 'tasks'), where('status', '==', 'pending'), limit(4)),
+        (snap) => {
+          setApprovals((curr) => ({ ...curr, tasks: snap.docs.map((d) => ({ id: d.id, ...d.data() })) }));
+        },
+        () => {}
+      ),
+      onSnapshot(
+        collection(db, 'clubs', selectedClubId, 'leagueFixtures'),
+        (snap) => {
+          const matches = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+          const liveOne = matches.find((m) => {
+            const s = (m.status || '').toLowerCase();
+            return s === 'live' || s === 'inprogress';
+          });
+          setLiveMatch(liveOne || null);
+          setStats((curr) => ({
+            ...curr,
+            liveMatchesCount: matches.filter((m) => (m.status || '').toLowerCase() === 'live').length,
+          }));
+          setRecentMatches(matches.slice(0, 4));
+          setLoading(false);
+        },
+        () => setLoading(false)
+      ),
     ];
 
-    return () => unsubscribers.forEach(u => u());
+    return () => unsubscribers.forEach((u) => u());
   }, [selectedClubId]);
 
   useEffect(() => {
-    if (!isSuperAdmin) return;
+    if (!isSuperAdmin) return undefined;
     const unsubClubs = onSnapshot(collection(db, 'clubs'), (snap) => {
-      setPlatformStats(curr => ({ ...curr, clubs: snap.size }));
+      setPlatformStats((curr) => ({ ...curr, clubs: snap.size }));
     });
-    const unsubUsers = onSnapshot(query(collection(db, 'users'), orderBy('createdAt', 'desc'), limit(5)), (snap) => {
-      setPlatformStats(curr => ({ ...curr, users: snap.size, recentSignups: snap.docs.map(d => ({ id: d.id, ...d.data() })) }));
+    const unsubUsers = onSnapshot(collection(db, 'users'), (snap) => {
+      setPlatformStats((curr) => ({ ...curr, users: snap.size }));
     });
     return () => {
       unsubClubs();
@@ -165,144 +217,159 @@ export default function Dashboard() {
     };
   }, [isSuperAdmin]);
 
+  /* ── Derived insights ─────────────────────────────────────────── */
+
+  // Upcoming events (recurrence-aware) for the next 30 days.
+  const upcomingEvents = useMemo(() => {
+    const today = todayIsoDate();
+    const horizon = addDaysToIsoDate(today, 30);
+    const out = [];
+    (rawEvents || []).forEach((event) => {
+      const baseDate = event.startDate || event.date;
+      if (!baseDate) return;
+      const dates = buildOccurrenceDates(baseDate, event.recurringRule, today, horizon, {
+        endDate: event.endDate || event.date,
+      });
+      dates.forEach((occurrenceDate) => {
+        out.push({ ...event, occurrenceDate, isRecurring: hasRecurrence(event.recurringRule) });
+      });
+    });
+    return out
+      .sort((a, b) => {
+        const aKey = `${a.occurrenceDate} ${a.startTime || a.time || '99:99'}`;
+        const bKey = `${b.occurrenceDate} ${b.startTime || b.time || '99:99'}`;
+        return aKey.localeCompare(bKey);
+      })
+      .slice(0, 5);
+  }, [rawEvents]);
+
+  // Member role distribution.
+  const roleBreakdown = useMemo(() => {
+    const counts = {};
+    (rawMembers || []).forEach((m) => {
+      const roles = Array.isArray(m.roles) && m.roles.length > 0 ? m.roles : m.role ? [m.role] : ['Unassigned'];
+      roles.forEach((role) => {
+        const key = String(role || 'Unassigned');
+        counts[key] = (counts[key] || 0) + 1;
+      });
+    });
+    return Object.entries(counts)
+      .map(([name, value]) => ({ name, value, color: ROLE_COLORS[name] || '#94A3B8' }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 6);
+  }, [rawMembers]);
+
+  // Order status split.
+  const orderStatusBreakdown = useMemo(() => {
+    const counts = {};
+    (rawOrders || []).forEach((o) => {
+      const key = String(o.status || 'pending').toLowerCase();
+      counts[key] = (counts[key] || 0) + 1;
+    });
+    return Object.entries(counts)
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value);
+  }, [rawOrders]);
+
+  const pendingTaskCount = useMemo(
+    () => (rawTasks || []).filter((t) => String(t.status || '').toLowerCase() !== 'completed').length,
+    [rawTasks]
+  );
+
+  const revenueThisWeek = useMemo(
+    () => revenueData.reduce((sum, d) => sum + (Number(d.revenue) || 0), 0),
+    [revenueData]
+  );
+
+  const ordersThisWeek = useMemo(
+    () => revenueData.reduce((sum, d) => sum + (Number(d.orders) || 0), 0),
+    [revenueData]
+  );
+
+  const avgOrderValue = stats.orders > 0 ? stats.totalRevenue / stats.orders : 0;
+
+  const memberGrowthData = useMemo(
+    () => [
+      { name: 'Members', total: stats.members },
+      { name: 'Teams', total: stats.teams },
+      { name: 'Events', total: stats.events },
+      { name: 'Products', total: stats.products },
+    ],
+    [stats.members, stats.teams, stats.events, stats.products]
+  );
+
+  const pendingApprovalsTotal = approvals.tasks.length + approvals.orders.length;
+
   return (
     <div className="dashboard-container">
       {/* Header */}
       <div className="page-header">
         <div>
-          <h1 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <h1 style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
             Control Center
             {stats.liveMatchesCount > 0 && (
-              <span className="badge badge-danger" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '11px', animation: 'pulse 1.5s infinite' }}>
+              <span className="badge badge-danger dash-live-badge">
                 <Radio size={12} /> {stats.liveMatchesCount} MATCH LIVE
               </span>
             )}
           </h1>
           <p className="subtitle">
-            {isSuperAdmin ? 'Global Platform Administration' : `Managing ${selectedClub?.name || 'Club HQ Infrastructure'}`}
+            {isSuperAdmin
+              ? 'Global platform administration'
+              : `Managing ${selectedClub?.name || 'your club'}`}
           </p>
         </div>
         <div className="header-actions">
-          <button 
-            className="btn btn-primary" 
-            onClick={() => window.location.href='/league-platform'}
-            style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-          >
-            <Radio size={16} /> Live Match Center
+          <button className="btn btn-outline" onClick={() => navigate('/calendar')}>
+            <Calendar size={16} /> <span>Calendar</span>
+          </button>
+          <button className="btn btn-primary" onClick={() => navigate('/league-platform')}>
+            <Radio size={16} /> <span>Live Match Center</span>
           </button>
         </div>
       </div>
 
-      {/* Hero Stats Marquee */}
+      {/* Hero Stats */}
       <div className="stats-marquee">
-        <StatsCard 
-          icon={Users} 
-          label="Total Members" 
-          value={stats.members} 
-          trend="+12%" 
-          color="#6366F1" 
-        />
-        <StatsCard 
-          icon={ShoppingBag} 
-          label="Shop Revenue" 
-          value={`$${stats.totalRevenue.toFixed(2)}`} 
-          trend={`${stats.orders} Orders`} 
-          color="#10B981" 
-        />
-        <StatsCard 
-          icon={UsersRound} 
-          label="Active Teams" 
-          value={stats.teams} 
-          trend="+2 New" 
-          color="#F59E0B" 
-        />
-        <StatsCard 
-          icon={Trophy} 
-          label="Fixtures & Matches" 
-          value={recentMatches.length} 
-          trend={stats.liveMatchesCount > 0 ? "1 Live" : "Up to date"} 
-          color="#3B82F6" 
-        />
-        <StatsCard 
-          icon={ListChecks} 
-          label="Pending Approvals" 
-          value={approvals.tasks.length + approvals.orders.length} 
-          color="#EF4444" 
-        />
+        <StatsCard icon={Users} label="Total Members" value={stats.members} trend={`${stats.teams} teams`} color="#6366F1" />
+        <StatsCard icon={DollarSign} label="Shop Revenue" value={formatMoney(stats.totalRevenue)} trend={`${stats.orders} orders`} color="#10B981" />
+        <StatsCard icon={ShoppingBag} label="Avg Order Value" value={formatMoney(avgOrderValue)} trend={`${formatMoney(revenueThisWeek)} this week`} color="#0EA5E9" />
+        <StatsCard icon={ListChecks} label="Open Tasks" value={pendingTaskCount} trend={pendingApprovalsTotal > 0 ? `${pendingApprovalsTotal} need review` : 'All clear'} color="#F59E0B" />
+        <StatsCard icon={Calendar} label="Upcoming Events" value={upcomingEvents.length} trend={stats.events > 0 ? `${stats.events} total` : 'None yet'} color="#8B5CF6" />
       </div>
 
-      {/* Cricbuzz-Style Live Match Spotlight Card (If Live/Upcoming Match Exists) */}
+      {/* Live Match Spotlight */}
       {liveMatch && (
-        <div 
-          className="card shadow-sm" 
-          style={{ 
-            marginBottom: '24px', 
-            background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)', 
-            color: '#ffffff',
-            border: '1px solid rgba(16, 185, 129, 0.3)',
-            borderRadius: '16px',
-            overflow: 'hidden',
-            boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.3)'
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 20px', borderBottom: '1px solid rgba(255, 255, 255, 0.1)', background: 'rgba(0,0,0,0.2)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span 
-                style={{ 
-                  background: (liveMatch.status || '').toLowerCase() === 'live' ? '#ef4444' : '#10b981', 
-                  color: '#fff', 
-                  fontSize: '11px', 
-                  fontWeight: 800, 
-                  padding: '3px 8px', 
-                  borderRadius: '20px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '4px',
-                  textTransform: 'uppercase'
-                }}
-              >
+        <div className="dash-live-card">
+          <div className="dash-live-head">
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+              <span className={`dash-live-pill ${(liveMatch.status || '').toLowerCase() === 'live' ? 'is-live' : ''}`}>
                 <Radio size={10} /> {(liveMatch.status || 'Scheduled').toUpperCase()}
               </span>
               <span style={{ fontSize: '13px', color: '#94a3b8' }}>
-                {liveMatch.competitionName || 'GreenSports Premier Match'} • {liveMatch.period || '1st Half'} ({liveMatch.matchMinute || 'Live'})
+                {liveMatch.competitionName || 'Club Fixture'}
+                {liveMatch.period ? ` • ${liveMatch.period}` : ''}
               </span>
             </div>
-            <button 
-              className="btn btn-sm btn-primary" 
-              onClick={() => navigate('/league-platform')}
-              style={{ fontSize: '12px', padding: '6px 12px' }}
-            >
+            <button className="btn btn-sm btn-primary" onClick={() => navigate('/league-platform')}>
               Control Broadcast <ChevronRight size={14} />
             </button>
           </div>
 
-          <div style={{ padding: '20px', display: 'flex', alignItems: 'center', justifyContent: 'space-around', flexWrap: 'wrap', gap: '16px' }}>
-            {/* Team 1 */}
-            <div style={{ textAlign: 'center', minWidth: '130px' }}>
-              <h3 style={{ fontSize: '20px', fontWeight: 800, margin: '0 0 6px 0', color: '#f8fafc' }}>
-                {liveMatch.homeTeam || 'Home Team'}
-              </h3>
-              <div style={{ fontSize: '28px', fontWeight: 900, color: '#10b981' }}>
+          <div className="dash-live-body">
+            <div className="dash-live-team">
+              <h3>{liveMatch.homeTeam || 'Home Team'}</h3>
+              <div className="dash-live-score home">
                 {typeof liveMatch.homeScore === 'number' ? liveMatch.homeScore : 0}
               </div>
             </div>
-
-            {/* VS Badge */}
-            <div style={{ textAlign: 'center' }}>
-              <span style={{ fontSize: '14px', fontWeight: 800, color: '#64748b', background: 'rgba(255,255,255,0.06)', padding: '6px 12px', borderRadius: '12px' }}>
-                VS
-              </span>
-              <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '6px' }}>
-                {liveMatch.venue || 'Main Stadium'}
-              </div>
+            <div className="dash-live-vs">
+              <span>VS</span>
+              <div>{liveMatch.venue || 'Main Stadium'}</div>
             </div>
-
-            {/* Team 2 */}
-            <div style={{ textAlign: 'center', minWidth: '130px' }}>
-              <h3 style={{ fontSize: '20px', fontWeight: 800, margin: '0 0 6px 0', color: '#f8fafc' }}>
-                {liveMatch.awayTeam || 'Away Team'}
-              </h3>
-              <div style={{ fontSize: '28px', fontWeight: 900, color: '#38bdf8' }}>
+            <div className="dash-live-team">
+              <h3>{liveMatch.awayTeam || 'Away Team'}</h3>
+              <div className="dash-live-score away">
                 {typeof liveMatch.awayScore === 'number' ? liveMatch.awayScore : 0}
               </div>
             </div>
@@ -312,74 +379,52 @@ export default function Dashboard() {
 
       {/* Main Grid */}
       <div className="dashboard-grid">
-        {/* Left Column: Charts & Insights */}
         <div className="dashboard-main">
-          
-          {/* Performance & Revenue Chart Card */}
-          <div className="card glass-card">
+          {/* Analytics */}
+          <div className="card">
             <div className="card-header" style={{ flexWrap: 'wrap', gap: '12px' }}>
               <div>
-                <h3 style={{ fontSize: '16px', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <TrendingUp size={18} className="text-primary" /> Performance &amp; Club Analytics
-                </h3>
-                <span className="text-muted text-sm">Real-time telemetry and revenue trajectories</span>
+                <h3><TrendingUp size={18} className="text-primary" /> Performance Analytics</h3>
+                <span className="text-muted text-sm">
+                  {analyticsTab === 'revenue'
+                    ? `${formatMoney(revenueThisWeek)} across ${ordersThisWeek} order${ordersThisWeek === 1 ? '' : 's'} in the last 7 days`
+                    : 'Club inventory at a glance'}
+                </span>
               </div>
-              
-              {/* Tab Selector */}
-              <div style={{ display: 'flex', background: '#F1F5F9', padding: '3px', borderRadius: '8px', gap: '4px' }}>
-                <button 
-                  type="button" 
+              <div className="dash-tabs">
+                <button
+                  type="button"
+                  className={analyticsTab === 'revenue' ? 'active' : ''}
                   onClick={() => setAnalyticsTab('revenue')}
-                  style={{
-                    border: 'none',
-                    background: analyticsTab === 'revenue' ? '#ffffff' : 'transparent',
-                    color: analyticsTab === 'revenue' ? 'var(--primary)' : 'var(--text-secondary)',
-                    fontWeight: 600,
-                    fontSize: '12px',
-                    padding: '6px 12px',
-                    borderRadius: '6px',
-                    cursor: 'pointer',
-                    boxShadow: analyticsTab === 'revenue' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
-                  }}
                 >
-                  Revenue ($)
+                  Revenue
                 </button>
-                <button 
-                  type="button" 
+                <button
+                  type="button"
+                  className={analyticsTab === 'members' ? 'active' : ''}
                   onClick={() => setAnalyticsTab('members')}
-                  style={{
-                    border: 'none',
-                    background: analyticsTab === 'members' ? '#ffffff' : 'transparent',
-                    color: analyticsTab === 'members' ? 'var(--primary)' : 'var(--text-secondary)',
-                    fontWeight: 600,
-                    fontSize: '12px',
-                    padding: '6px 12px',
-                    borderRadius: '6px',
-                    cursor: 'pointer',
-                    boxShadow: analyticsTab === 'members' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
-                  }}
                 >
-                  Members Growth
+                  Club Overview
                 </button>
               </div>
             </div>
 
-            <div className="chart-container" style={{ width: '100%', height: 280, minWidth: 0 }}>
+            <div className="chart-container">
               <ResponsiveContainer width="100%" height="100%">
                 {analyticsTab === 'revenue' ? (
                   <AreaChart data={revenueData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                     <defs>
                       <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
-                        <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                        <stop offset="5%" stopColor="#10b981" stopOpacity={0.3} />
+                        <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
                       </linearGradient>
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
                     <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 12 }} />
-                    <YAxis axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 12 }} />
-                    <Tooltip 
-                      formatter={(val) => [`$${val}`, 'Merch Revenue']}
-                      contentStyle={{ backgroundColor: '#ffffff', borderRadius: '10px', border: '1px solid #e2e8f0', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }} 
+                    <YAxis axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 12 }} allowDecimals={false} />
+                    <Tooltip
+                      formatter={(val) => [`$${val}`, 'Revenue']}
+                      contentStyle={{ backgroundColor: '#ffffff', borderRadius: '10px', border: '1px solid #e2e8f0', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }}
                     />
                     <Area type="monotone" dataKey="revenue" stroke="#10b981" strokeWidth={3} fillOpacity={1} fill="url(#colorRevenue)" />
                   </AreaChart>
@@ -387,162 +432,271 @@ export default function Dashboard() {
                   <BarChart data={memberGrowthData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
                     <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 12 }} />
-                    <YAxis axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 12 }} />
-                    <Tooltip 
-                      contentStyle={{ backgroundColor: '#ffffff', borderRadius: '10px', border: '1px solid #e2e8f0' }} 
-                    />
-                    <Bar dataKey="total" fill="#6366f1" radius={[4, 4, 0, 0]} name="Total Registered" />
-                    <Bar dataKey="active" fill="#10b981" radius={[4, 4, 0, 0]} name="Active Players" />
+                    <YAxis axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 12 }} allowDecimals={false} />
+                    <Tooltip contentStyle={{ backgroundColor: '#ffffff', borderRadius: '10px', border: '1px solid #e2e8f0' }} />
+                    <Bar dataKey="total" fill="#6366f1" radius={[6, 6, 0, 0]} name="Count" />
                   </BarChart>
                 )}
               </ResponsiveContainer>
             </div>
           </div>
 
-          {/* Subgrid: Recent Orders & Rapid Actions */}
+          {/* Upcoming Schedule + Recent Orders */}
           <div className="dashboard-subgrid">
-            {/* Recent Orders Card */}
             <div className="card">
               <div className="card-header">
-                <h3><PackageCheck size={18} className="text-primary" /> Recent Shop Orders</h3>
+                <h3><Calendar size={18} className="text-primary" /> Upcoming Schedule</h3>
+                <button className="text-btn" onClick={() => navigate('/calendar')}>
+                  <span>Calendar</span>
+                  <ArrowUpRight size={14} />
+                </button>
+              </div>
+              <div className="dash-list">
+                {upcomingEvents.length === 0 ? (
+                  <p className="dash-empty">Nothing scheduled in the next 30 days</p>
+                ) : (
+                  upcomingEvents.map((event) => (
+                    <div key={`${event.id}-${event.occurrenceDate}`} className="dash-list-row">
+                      <div className="dash-date-chip">
+                        <span>{MONTH_SHORT[parseIsoDate(event.occurrenceDate)?.getMonth() ?? 0]}</span>
+                        <strong>{parseIsoDate(event.occurrenceDate)?.getDate() ?? '—'}</strong>
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p className="dash-row-title">
+                          {event.title || 'Untitled event'}
+                          {event.isRecurring && <Repeat size={11} className="dash-repeat-icon" />}
+                        </p>
+                        <span className="dash-row-meta">
+                          <Clock size={11} /> {formatEventTime(event)}
+                          {event.location ? (
+                            <>
+                              <MapPin size={11} style={{ marginLeft: 8 }} /> {event.location}
+                            </>
+                          ) : null}
+                        </span>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            <div className="card">
+              <div className="card-header">
+                <h3><PackageCheck size={18} className="text-primary" /> Recent Orders</h3>
                 <button className="text-btn" onClick={() => navigate('/orders')}>
                   <span>View All</span>
                   <ArrowUpRight size={14} />
                 </button>
               </div>
-              <div className="activity-list">
+              <div className="dash-list">
                 {recentOrdersList.length === 0 ? (
-                  <p className="empty-msg" style={{ padding: '20px 0', textAlign: 'center', color: '#94a3b8' }}>
-                    No shop orders logged yet
-                  </p>
-                ) : recentOrdersList.map(o => (
-                  <div key={o.id} className="activity-item" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid #f1f5f9' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <div className="activity-icon" style={{ background: '#ECFDF5', color: '#10B981', padding: 8, borderRadius: 8 }}>
+                  <p className="dash-empty">No shop orders yet</p>
+                ) : (
+                  recentOrdersList.map((o) => (
+                    <div key={o.id} className="dash-list-row">
+                      <div className="dash-icon-chip" style={{ background: '#ECFDF5', color: '#10B981' }}>
                         <ShoppingBag size={15} />
                       </div>
-                      <div>
-                        <p style={{ margin: 0, fontSize: '13px', fontWeight: 600 }}>{o.userName || o.userEmail || 'Member'}</p>
-                        <span style={{ fontSize: '11px', color: '#94a3b8' }}>{o.status || 'Completed'} • {o.items?.length || 1} Item(s)</span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p className="dash-row-title">{o.userName || o.userEmail || 'Member'}</p>
+                        <span className="dash-row-meta">
+                          {o.status || 'pending'} • {o.items?.length || 1} item{(o.items?.length || 1) === 1 ? '' : 's'}
+                        </span>
                       </div>
+                      <div className="dash-row-amount">{formatMoney(o.total)}</div>
                     </div>
-                    <div style={{ fontWeight: 700, fontSize: '13px', color: 'var(--primary)' }}>
-                      ${(Number(o.total) || 0).toFixed(2)}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Rapid Actions Card */}
-            <div className="card">
-              <div className="card-header">
-                <h3><Zap size={18} className="text-primary" /> Rapid Action Hub</h3>
-              </div>
-              <div className="action-grid">
-                <button className="action-btn" onClick={() => navigate('/league-platform')}>
-                  <div className="action-icon" style={{ background: '#EEF2FF', color: '#6366F1' }}>
-                    <Radio size={20} />
-                  </div>
-                  <span>Live Match</span>
-                </button>
-                <button className="action-btn" onClick={() => navigate('/products')}>
-                  <div className="action-icon" style={{ background: '#ECFDF5', color: '#10B981' }}>
-                    <ShoppingBag size={20} />
-                  </div>
-                  <span>Add Product</span>
-                </button>
-                <button className="action-btn" onClick={() => navigate('/members')}>
-                  <div className="action-icon" style={{ background: '#FFFBEB', color: '#F59E0B' }}>
-                    <Users size={20} />
-                  </div>
-                  <span>Members</span>
-                </button>
-                <button className="action-btn" onClick={() => navigate('/posts')}>
-                  <div className="action-icon" style={{ background: '#FEF2F2', color: '#EF4444' }}>
-                    <Plus size={20} />
-                  </div>
-                  <span>New Post</span>
-                </button>
+                  ))
+                )}
               </div>
             </div>
           </div>
 
+          {/* Role distribution */}
+          <div className="card">
+            <div className="card-header">
+              <h3><UsersRound size={18} className="text-primary" /> Member Roles</h3>
+              <button className="text-btn" onClick={() => navigate('/members')}>
+                <span>Manage</span>
+                <ArrowUpRight size={14} />
+              </button>
+            </div>
+            {roleBreakdown.length === 0 ? (
+              <p className="dash-empty">No members registered yet</p>
+            ) : (
+              <div className="dash-role-grid">
+                {roleBreakdown.map((role) => (
+                  <div key={role.name} className="dash-role-item">
+                    <span className="dash-role-dot" style={{ background: role.color }} />
+                    <span className="dash-role-name">{role.name}</span>
+                    <span className="dash-role-count">{role.value}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
-        {/* Right Column: Context & Approvals */}
+        {/* Side column */}
         <div className="dashboard-side">
-          
-          {/* Club Identity Card */}
-          <div className="card context-card">
+          {/* Club identity */}
+          <div className="card">
             <div className="card-header">
               <h3><Building2 size={18} /> Club Identity</h3>
-              <SettingsIcon size={16} className="text-muted cursor-pointer" onClick={() => navigate('/settings')} />
+              <SettingsIcon
+                size={16}
+                className="text-muted cursor-pointer"
+                onClick={() => navigate('/settings')}
+              />
             </div>
             {selectedClub ? (
-              <div className="club-mini-profile">
-                <div className="club-banner-placeholder" style={{ background: 'linear-gradient(135deg, #10b981 0%, #047857 100%)', borderRadius: 10, padding: 14, textAlign: 'center', color: '#fff', marginBottom: 12 }}>
-                  <div style={{ width: 44, height: 44, borderRadius: '50%', background: '#fff', color: '#10b981', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 8px auto', fontWeight: 800, fontSize: 18 }}>
-                    {selectedClub.name.charAt(0)}
+              <div className="dash-club">
+                <div className="dash-club-banner">
+                  <div className="dash-club-avatar">
+                    {selectedClub.name?.charAt(0) || 'C'}
                   </div>
-                  <h4 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>{selectedClub.name}</h4>
-                  <p style={{ margin: '2px 0 0 0', fontSize: 12, opacity: 0.9 }}>{selectedClub.sport || 'Sports'} Organization</p>
+                  <h4>{selectedClub.name}</h4>
+                  <p>{selectedClub.sport || 'Sports'} Organization</p>
                 </div>
-                <div className="info-chips" style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                  <span className="badge badge-info" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                    <Zap size={10} /> Plan: {selectedClub.plan || 'Pro Admin'}
+                <div className="dash-club-chips">
+                  <span className="badge badge-info">
+                    <Zap size={10} /> {selectedClub.plan || 'Pro'}
                   </span>
-                  <span className="badge badge-default" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                    <Shield size={10} /> Code: {selectedClub.inviteCode || 'N/A'}
+                  <span className="badge badge-default">
+                    <Shield size={10} /> {selectedClub.inviteCode || 'No code'}
                   </span>
                 </div>
               </div>
             ) : (
-              <p className="empty-msg">Select a club to view profile</p>
+              <p className="dash-empty">Select a club to view its profile</p>
             )}
           </div>
 
-          {/* Pending Tasks & Approvals */}
-          <div className="card task-card">
+          {/* Needs attention */}
+          <div className="card">
             <div className="card-header">
-              <h3><ListChecks size={18} /> Pending Tasks ({approvals.tasks.length})</h3>
+              <h3><AlertCircle size={18} /> Needs Attention</h3>
+              {pendingApprovalsTotal > 0 && (
+                <span className="badge badge-warning">{pendingApprovalsTotal}</span>
+              )}
             </div>
-            <div className="mini-task-list">
-              {approvals.tasks.length === 0 ? (
-                <p className="empty-msg" style={{ padding: '16px 0', textAlign: 'center', color: '#94a3b8' }}>
-                  All tasks up to date
-                </p>
-              ) : approvals.tasks.map(t => (
-                <div key={t.id} className="mini-task" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #f1f5f9' }}>
-                  <div className="task-body">
-                    <p style={{ margin: 0, fontSize: '13px', fontWeight: 600 }}>{t.title}</p>
-                    <span style={{ fontSize: '11px', color: '#94a3b8' }}>Due: {t.dueDate || 'ASAP'}</span>
-                  </div>
-                  <ArrowUpRight size={14} className="task-link cursor-pointer" onClick={() => window.location.href='/tasks'} />
-                </div>
-              ))}
+            <div className="dash-list">
+              {pendingApprovalsTotal === 0 ? (
+                <p className="dash-empty">Everything is up to date</p>
+              ) : (
+                <>
+                  {approvals.orders.map((o) => (
+                    <div
+                      key={`order-${o.id}`}
+                      className="dash-list-row clickable"
+                      onClick={() => navigate('/orders')}
+                    >
+                      <div className="dash-icon-chip" style={{ background: '#FFFBEB', color: '#F59E0B' }}>
+                        <ShoppingBag size={15} />
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p className="dash-row-title">{o.userName || 'Order'}</p>
+                        <span className="dash-row-meta">Awaiting fulfilment</span>
+                      </div>
+                      <ArrowRight size={14} className="text-muted" />
+                    </div>
+                  ))}
+                  {approvals.tasks.map((t) => (
+                    <div
+                      key={`task-${t.id}`}
+                      className="dash-list-row clickable"
+                      onClick={() => navigate('/tasks')}
+                    >
+                      <div className="dash-icon-chip" style={{ background: '#EEF2FF', color: '#6366F1' }}>
+                        <ListChecks size={15} />
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p className="dash-row-title">{t.title || 'Task'}</p>
+                        <span className="dash-row-meta">Due {t.dueDate || 'ASAP'}</span>
+                      </div>
+                      <ArrowRight size={14} className="text-muted" />
+                    </div>
+                  ))}
+                </>
+              )}
             </div>
           </div>
 
-          {/* Superadmin Platform Card */}
-          {isSuperAdmin && (
-            <div className="card platform-card" style={{ marginTop: '20px' }}>
+          {/* Order status */}
+          {orderStatusBreakdown.length > 0 && (
+            <div className="card">
               <div className="card-header">
-                <h3><Shield size={18} /> Platform Global</h3>
+                <h3><Boxes size={18} /> Order Pipeline</h3>
               </div>
-              <div className="platform-stats" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', textAlign: 'center' }}>
-                <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '8px' }}>
-                  <span style={{ fontSize: '11px', color: '#64748b' }}>Clubs</span>
-                  <div style={{ fontSize: '18px', fontWeight: 800 }}>{platformStats.clubs}</div>
-                </div>
-                <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '8px' }}>
-                  <span style={{ fontSize: '11px', color: '#64748b' }}>Users</span>
-                  <div style={{ fontSize: '18px', fontWeight: 800 }}>{platformStats.users}</div>
-                </div>
+              <div className="dash-list">
+                {orderStatusBreakdown.map((s) => (
+                  <div key={s.name} className="dash-status-row">
+                    <span className="dash-status-name">{s.name}</span>
+                    <div className="dash-status-bar">
+                      <div
+                        style={{
+                          width: `${Math.max(6, (s.value / Math.max(1, stats.orders)) * 100)}%`,
+                        }}
+                      />
+                    </div>
+                    <span className="dash-status-count">{s.value}</span>
+                  </div>
+                ))}
               </div>
             </div>
           )}
 
+          {/* Quick actions */}
+          <div className="card">
+            <div className="card-header">
+              <h3><Zap size={18} className="text-primary" /> Quick Actions</h3>
+            </div>
+            <div className="action-grid">
+              <button className="action-btn" onClick={() => navigate('/members')}>
+                <div className="action-icon" style={{ background: '#FFFBEB', color: '#F59E0B' }}>
+                  <UserCheck size={20} />
+                </div>
+                <span>Members</span>
+              </button>
+              <button className="action-btn" onClick={() => navigate('/events')}>
+                <div className="action-icon" style={{ background: '#EEF2FF', color: '#6366F1' }}>
+                  <Calendar size={20} />
+                </div>
+                <span>Events</span>
+              </button>
+              <button className="action-btn" onClick={() => navigate('/products')}>
+                <div className="action-icon" style={{ background: '#ECFDF5', color: '#10B981' }}>
+                  <ShoppingBag size={20} />
+                </div>
+                <span>Products</span>
+              </button>
+              <button className="action-btn" onClick={() => navigate('/posts')}>
+                <div className="action-icon" style={{ background: '#FEF2F2', color: '#EF4444' }}>
+                  <Newspaper size={20} />
+                </div>
+                <span>New Post</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Superadmin platform */}
+          {isSuperAdmin && (
+            <div className="card">
+              <div className="card-header">
+                <h3><Shield size={18} /> Platform</h3>
+              </div>
+              <div className="dash-platform-grid">
+                <div>
+                  <span>Clubs</span>
+                  <strong>{platformStats.clubs}</strong>
+                </div>
+                <div>
+                  <span>Users</span>
+                  <strong>{platformStats.users}</strong>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

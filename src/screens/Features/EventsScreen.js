@@ -22,11 +22,18 @@ import { FAB } from "../../components/ui/Button";
 import { theme } from "../../theme/theme";
 import { useClub } from "../../contexts/ClubContext";
 import { subscribeToEvents, deleteEvent } from "../../services/eventService";
+import {
+  buildOccurrenceDates,
+  hasRecurrence,
+  todayIsoDate,
+  addDaysToIsoDate,
+} from "../../utils/recurrence";
 
 const formatEventDate = (event) => {
-  if (!event?.date) return "Date TBC";
-  const d = new Date(`${event.date}T00:00:00`);
-  if (Number.isNaN(d.getTime())) return event.date;
+  const value = event?.nextOccurrenceDate || event?.date;
+  if (!value) return "Date TBC";
+  const d = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return value;
   const dateLabel = d.toLocaleDateString(undefined, {
     weekday: "short",
     month: "short",
@@ -59,16 +66,39 @@ export default function EventsScreen({ navigation }) {
   }, [activeClubId]);
 
   const nonMatchEvents = useMemo(() => {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayIsoDate();
+    const horizon = addDaysToIsoDate(today, 180);
+
     return (events || [])
       .filter((event) => {
         const type = (event.type || "").toLowerCase();
         return type !== "game" && type !== "match";
       })
-      .filter((event) => !event.date || event.date >= today)
+      .map((event) => {
+        const baseDate = event.startDate || event.date;
+        // Recurring events keep showing even when the anchor date is past.
+        const occurrences = buildOccurrenceDates(
+          baseDate,
+          event.recurringRule,
+          today,
+          horizon,
+          { endDate: event.endDate || event.date },
+        );
+        return {
+          ...event,
+          nextOccurrenceDate: occurrences[0] || baseDate || "",
+          occurrenceCount: occurrences.length,
+        };
+      })
+      .filter((event) => {
+        if (!event.nextOccurrenceDate) return false;
+        // Hide one-off events that already happened.
+        if (hasRecurrence(event.recurringRule)) return true;
+        return event.nextOccurrenceDate >= today;
+      })
       .sort((a, b) => {
-        const aKey = `${a.date || ""} ${a.startTime || ""}`;
-        const bKey = `${b.date || ""} ${b.startTime || ""}`;
+        const aKey = `${a.nextOccurrenceDate || ""} ${a.startTime || ""}`;
+        const bKey = `${b.nextOccurrenceDate || ""} ${b.startTime || ""}`;
         return aKey.localeCompare(bKey);
       });
   }, [events]);

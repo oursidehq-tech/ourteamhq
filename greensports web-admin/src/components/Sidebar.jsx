@@ -5,7 +5,7 @@ import {
   LayoutDashboard, Building2, Users, UsersRound, FileText,
   Calendar, ShoppingBag, ClipboardList, PackageCheck, Wrench,
   Bell, Settings, LogOut, ListChecks, Shield, Crown, BarChart3,
-  Trophy, BookOpen, DollarSign, Award, ShieldCheck, ChevronLeft, ChevronRight, X
+  Trophy, BookOpen, DollarSign, Award, ShieldCheck, ChevronLeft, ChevronRight, X, Play
 } from 'lucide-react';
 
 // Navigation sections for Administrators
@@ -37,6 +37,7 @@ const adminSections = [
       { to: '/groups', icon: UsersRound, label: 'Groups' },
       { to: '/posts', icon: FileText, label: 'Posts' },
       { to: '/events', icon: Calendar, label: 'Events' },
+      { to: '/admin-calendar', icon: Calendar, label: 'Calendar' },
       { to: '/notifications', icon: Bell, label: 'Notifications' },
     ]
   },
@@ -69,6 +70,7 @@ const userSections = [
       { to: '/user-teams', icon: UsersRound, label: 'My Teams' },
       { to: '/user-groups', icon: Users, label: 'My Groups' },
       { to: '/user-calendar', icon: Calendar, label: 'Calendar & Duties' },
+      { to: '/user-notifications', icon: Bell, label: 'Notifications' },
     ]
   },
   {
@@ -83,6 +85,15 @@ const userSections = [
     items: [
       { to: '/user-tasks', icon: ListChecks, label: 'Duties & Shifts' },
       { to: '/user-training', icon: BookOpen, label: 'Drills & Plans' },
+      { to: '/user-compliance', icon: ShieldCheck, label: 'My Compliance' },
+      { to: '/user-bookings', icon: Calendar, label: 'Bookings', roles: ['Owner', 'Admin', 'Manager', 'Coach'] },
+    ]
+  },
+  {
+    title: 'Club & Information',
+    items: [
+      { to: '/user-sponsors', icon: Award, label: 'Club Sponsors' },
+      { to: '/user-reports', icon: BarChart3, label: 'Reports & Summary' },
     ]
   },
   {
@@ -210,6 +221,34 @@ export default function Sidebar({ isCollapsed, onToggle, mobileOpen, onCloseMobi
           );
         })}
       </nav>
+      <div style={{ padding: '8px 12px' }}>
+        <a 
+          href="/promo.html" 
+          target="_blank" 
+          rel="noopener noreferrer" 
+          className="promo-sidebar-link"
+          title={isCollapsed ? "Watch Promo Video" : ""}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px',
+            padding: '10px 14px',
+            background: 'linear-gradient(135deg, rgba(46, 213, 115, 0.16) 0%, rgba(0, 210, 211, 0.16) 100%)',
+            border: '1px solid rgba(46, 213, 115, 0.45)',
+            borderRadius: '10px',
+            color: '#2ed573',
+            textDecoration: 'none',
+            fontSize: '0.84rem',
+            fontWeight: 700,
+            transition: 'all 0.2s ease',
+            justifyContent: isCollapsed ? 'center' : 'flex-start',
+            boxShadow: '0 0 12px rgba(46, 213, 115, 0.15)'
+          }}
+        >
+          <Play size={16} fill="#2ed573" />
+          {!isCollapsed && <span>Watch Promo Reel 🎬</span>}
+        </a>
+      </div>
       <button className="sidebar-logout" onClick={handleLogout} title={isCollapsed ? "Sign Out" : ""}>
         <LogOut size={18} />
         {!isCollapsed && <span>Sign Out</span>}

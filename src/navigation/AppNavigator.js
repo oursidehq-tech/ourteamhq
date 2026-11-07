@@ -79,6 +79,7 @@ import SettingsScreen from "../screens/SettingsScreen";
 import HelpSupportScreen from "../screens/HelpSupportScreen";
 import RoleChangeRequestScreen from "../screens/Auth/RoleChangeRequestScreen";
 import OrganisationScreen from "../screens/Features/OrganisationScreen";
+import TrainingPlansScreen from "../screens/Features/TrainingPlansScreen";
 import AdminPageScreen from "../screens/AdminPageScreen";
 
 const Tab = createBottomTabNavigator();
@@ -429,6 +430,10 @@ export default function AppNavigator() {
                   <Stack.Screen
                     name="Organisation"
                     component={OrganisationScreen}
+                  />
+                  <Stack.Screen
+                    name="TrainingPlans"
+                    component={TrainingPlansScreen}
                   />
                 </Stack.Group>
               </>

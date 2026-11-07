@@ -181,6 +181,7 @@ const normalizeEventRepeatRule = ({
   baseDate,
   customRepeatEnds,
   customRepeatEndDate,
+  customRepeatCount,
 }) => {
   const weekdayIndex = getWeekdayIndex(baseDate);
   const customInterval = normalizeRepeatInterval(customRepeatInterval);
@@ -228,6 +229,11 @@ const normalizeEventRepeatRule = ({
       const normalized = normalizeIsoDateInput(customRepeatEndDate);
       if (normalized) {
         base.untilDate = normalized;
+      }
+    } else if (customRepeatEnds === "count") {
+      const parsedCount = parseInt(customRepeatCount, 10);
+      if (Number.isFinite(parsedCount) && parsedCount > 0) {
+        base.count = parsedCount;
       }
     }
 
@@ -528,6 +534,12 @@ const CreateItemScreen = ({ navigation, route }) => {
         if (initialData.recurringRule.untilDate) {
           setCustomRepeatEnds("date");
           setCustomRepeatEndDate(initialData.recurringRule.untilDate);
+        } else if (
+          Number.isFinite(Number(initialData.recurringRule.count)) &&
+          Number(initialData.recurringRule.count) > 0
+        ) {
+          setCustomRepeatEnds("count");
+          setCustomRepeatCount(String(initialData.recurringRule.count));
         } else {
           setCustomRepeatEnds("never");
         }
@@ -1271,6 +1283,7 @@ const CreateItemScreen = ({ navigation, route }) => {
               baseDate: normalizedStartDate,
               customRepeatEnds,
               customRepeatEndDate,
+              customRepeatCount,
             });
 
             const normalizedEventGroupIds = eventOpenToAll
@@ -1376,6 +1389,7 @@ const CreateItemScreen = ({ navigation, route }) => {
                 baseDate: taskStartDate || initialTaskDate,
                 customRepeatEnds,
                 customRepeatEndDate,
+                customRepeatCount,
               }),
               createdBy,
             };
@@ -1476,6 +1490,7 @@ const CreateItemScreen = ({ navigation, route }) => {
               baseDate: normalizedStartDate,
               customRepeatEnds,
               customRepeatEndDate,
+              customRepeatCount,
             });
 
             await createTask(activeClubId, {

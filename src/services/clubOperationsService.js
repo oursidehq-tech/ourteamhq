@@ -95,6 +95,10 @@ const teamComplianceCol = (clubId) =>
 const drillsCol = (clubId) => collection(db, "clubs", clubId, "drills");
 const trainingPlansCol = (clubId) =>
   collection(db, "clubs", clubId, "trainingPlans");
+const trainingSessionsCol = (clubId) =>
+  collection(db, "clubs", clubId, "trainingSessions");
+const eventsCol = (clubId) => collection(db, "clubs", clubId, "events");
+const notificationsCol = (clubId) => collection(db, "clubs", clubId, "notifications");
 const familyProfilesCol = (clubId) =>
   collection(db, "clubs", clubId, "familyProfiles");
 const playerProfilesCol = (clubId) =>
@@ -643,16 +647,32 @@ export const createTrainingPlan = async (
     teamId = "",
     teamName = "",
     objective = "",
+    description = "",
     sessionDate = "",
     drillIds = [],
+    planItems = [],
+    durationMins = 0,
+    status = "draft",
+    isTemplate = false,
     sharedWithGroupIds = [],
     createdBy = "",
+    createdByName = "",
   },
 ) => {
   const ref = doc(trainingPlansCol(clubId));
   const normalizedTeamId = String(teamId || "").trim();
+  const normalizedItems = (planItems || []).map((item, idx) => ({
+    ...item,
+    sortOrder: typeof item.sortOrder === "number" ? item.sortOrder : idx,
+    durationOverride:
+      item.durationOverride != null && item.durationOverride !== ""
+        ? Number(item.durationOverride)
+        : null,
+  }));
   const normalizedDrillIds = Array.from(
-    new Set((drillIds || []).filter(Boolean)),
+    new Set(
+      (normalizedItems.length > 0 ? normalizedItems.map((i) => i.drillId) : drillIds || []).filter(Boolean)
+    )
   );
   const normalizedSharedGroupIds = Array.from(
     new Set((sharedWithGroupIds || []).filter(Boolean)),
@@ -666,11 +686,18 @@ export const createTrainingPlan = async (
       ? [normalizedTeamId, normalizedTeamId.toLowerCase()]
       : [],
     groupType: normalizedTeamId ? "Team" : "Club",
-    objective: String(objective || "").trim(),
+    objective: String(objective || description || "").trim(),
+    description: String(description || objective || "").trim(),
     sessionDate: String(sessionDate || "").trim(),
     drillIds: normalizedDrillIds,
+    planItems: normalizedItems,
+    durationMins: Number(durationMins) || 0,
+    status: status || "draft",
+    isTemplate: Boolean(isTemplate),
     sharedWithGroupIds: normalizedSharedGroupIds,
+    isDeleted: false,
     createdBy,
+    createdByName,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   };
@@ -687,8 +714,13 @@ export const updateTrainingPlan = async (
     teamId,
     teamName,
     objective,
+    description,
     sessionDate,
     drillIds,
+    planItems,
+    durationMins,
+    status,
+    isTemplate,
     sharedWithGroupIds,
   },
 ) => {
@@ -696,8 +728,18 @@ export const updateTrainingPlan = async (
 
   const normalizedTeamId =
     teamId !== undefined ? String(teamId).trim() : undefined;
+  const normalizedItems = Array.isArray(planItems)
+    ? planItems.map((item, idx) => ({
+        ...item,
+        sortOrder: typeof item.sortOrder === "number" ? item.sortOrder : idx,
+        durationOverride:
+          item.durationOverride != null && item.durationOverride !== ""
+            ? Number(item.durationOverride)
+            : null,
+      }))
+    : undefined;
   const normalizedDrillIds =
-    drillIds && Array.from(new Set((drillIds || []).filter(Boolean)));
+    drillIds || (normalizedItems ? normalizedItems.map((i) => i.drillId) : undefined);
   const normalizedSharedGroupIds =
     sharedWithGroupIds &&
     Array.from(new Set((sharedWithGroupIds || []).filter(Boolean)));
@@ -705,13 +747,25 @@ export const updateTrainingPlan = async (
   const ref = doc(trainingPlansCol(clubId), planId);
   const updates = {
     ...(title !== undefined && { title: String(title).trim() }),
-    ...(teamId !== undefined && { teamId: normalizedTeamId }),
+    ...(teamId !== undefined && {
+      teamId: normalizedTeamId,
+      assignedGroupId: normalizedTeamId || null,
+      assignedGroupIds: normalizedTeamId
+        ? [normalizedTeamId, normalizedTeamId.toLowerCase()]
+        : [],
+      groupType: normalizedTeamId ? "Team" : "Club",
+    }),
     ...(teamName !== undefined && { teamName: String(teamName).trim() }),
     ...(objective !== undefined && { objective: String(objective).trim() }),
+    ...(description !== undefined && { description: String(description).trim() }),
     ...(sessionDate !== undefined && {
       sessionDate: String(sessionDate).trim(),
     }),
-    ...(drillIds && { drillIds: normalizedDrillIds }),
+    ...(normalizedDrillIds && { drillIds: normalizedDrillIds }),
+    ...(normalizedItems !== undefined && { planItems: normalizedItems }),
+    ...(durationMins !== undefined && { durationMins: Number(durationMins) || 0 }),
+    ...(status !== undefined && { status }),
+    ...(isTemplate !== undefined && { isTemplate: Boolean(isTemplate) }),
     ...(sharedWithGroupIds && { sharedWithGroupIds: normalizedSharedGroupIds }),
     updatedAt: serverTimestamp(),
   };
@@ -796,6 +850,185 @@ export const subscribeToTrainingPlans = (
   );
 
   return () => unsubs.forEach((unsub) => unsub?.());
+};
+
+export const subscribeToTrainingSessions = (
+  clubId,
+  callback,
+  { userGroupIds = [], userId = "", isAdmin = false } = {},
+) => {
+  if (!clubId) {
+    callback([]);
+    return () => {};
+  }
+
+  const q = query(trainingSessionsCol(clubId), orderBy("scheduledAt", "desc"));
+  return onSnapshot(
+    q,
+    (snap) => {
+      const allSessions = snap.docs
+        .map((d) => ({ id: d.id, ...d.data() }))
+        .filter((d) => d.isDeleted !== true);
+
+      if (isAdmin) {
+        callback(allSessions);
+        return;
+      }
+
+      // Filter sessions for player/parent if specific to team
+      const normalizedGroupIds = new Set(
+        (userGroupIds || []).map((id) => String(id || "").toLowerCase())
+      );
+
+      const visible = allSessions.filter((session) => {
+        if (!session.teamId) return true; // Club-wide session
+        const tid = String(session.teamId).toLowerCase();
+        return normalizedGroupIds.has(tid) || normalizedGroupIds.has(`team:${tid}`);
+      });
+
+      callback(visible);
+    },
+    (err) => {
+      console.warn("subscribeToTrainingSessions error:", err);
+      callback([]);
+    }
+  );
+};
+
+export const createTrainingSession = async (
+  clubId,
+  {
+    planId,
+    planTitle = "",
+    teamId = "",
+    teamName = "",
+    scheduledAt = "",
+    location = "",
+    createdBy = "",
+    locked = false,
+  },
+) => {
+  const sessionRef = doc(trainingSessionsCol(clubId));
+  const sessionId = sessionRef.id;
+
+  const sessionPayload = {
+    planId,
+    planTitle: planTitle || "Training Session",
+    teamId: teamId || null,
+    teamName: teamName || "Club Wide",
+    scheduledAt: scheduledAt || new Date().toISOString(),
+    location: location || "",
+    status: "scheduled",
+    attendance: [],
+    locked: Boolean(locked),
+    isDeleted: false,
+    createdBy: createdBy || "",
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  };
+  await setDoc(sessionRef, sessionPayload);
+
+  // Sync to calendar in clubs/{clubId}/events
+  let eventDate = "";
+  let eventStartTime = "";
+  if (scheduledAt) {
+    if (scheduledAt.includes("T")) {
+      const [d, t] = scheduledAt.split("T");
+      eventDate = d;
+      eventStartTime = t.slice(0, 5);
+    } else {
+      eventDate = scheduledAt.slice(0, 10);
+    }
+  }
+
+  try {
+    const eventRef = doc(eventsCol(clubId));
+    await setDoc(eventRef, {
+      title: `Training: ${planTitle || "Team Session"}`,
+      description: `Training session scheduled from plan "${planTitle}". Location: ${location || "Club Ground"}.`,
+      date: eventDate || new Date().toISOString().slice(0, 10),
+      startTime: eventStartTime || "18:00",
+      endTime: "",
+      location: location || "Club Ground",
+      type: "training",
+      category: "training",
+      teamId: teamId || null,
+      assignedGroupId: teamId || null,
+      assignedGroupIds: teamId ? [teamId, teamId.toLowerCase()] : [],
+      assignedGroupName: teamName || "Club",
+      groupType: teamId ? "Team" : "Club",
+      openToAll: !teamId,
+      trainingSessionId: sessionId,
+      planId: planId,
+      createdBy: createdBy || "",
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+    await updateDoc(sessionRef, { calendarEventId: eventRef.id });
+  } catch (e) {
+    console.warn("Failed to push session to calendar events:", e);
+  }
+
+  // Push notification for members
+  try {
+    const notifRef = doc(notificationsCol(clubId));
+    const prettyDate = eventDate ? `${eventDate} ${eventStartTime ? 'at ' + eventStartTime : ''}` : 'Upcoming date';
+    await setDoc(notifRef, {
+      title: `New Training: ${planTitle || "Team Session"}`,
+      body: `A training session has been scheduled for ${prettyDate} at ${location || "Club Ground"}. Open to view drills.`,
+      message: `A training session has been scheduled for ${prettyDate} at ${location || "Club Ground"}. Open to view drills.`,
+      recipientId: teamId || "all",
+      clubId,
+      read: false,
+      type: "training",
+      meta: {
+        trainingSessionId: sessionId,
+        planId: planId,
+        teamId: teamId || null,
+      },
+      sentBy: "coach",
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+  } catch (e) {
+    console.warn("Failed to push session notification:", e);
+  }
+
+  return sessionId;
+};
+
+export const deleteTrainingSession = async (clubId, sessionId) => {
+  if (!sessionId) throw new Error("Session ID is required");
+  const ref = doc(trainingSessionsCol(clubId), sessionId);
+  const snap = await getDoc(ref);
+  if (snap.exists()) {
+    const sess = snap.data();
+    if (sess.calendarEventId) {
+      try {
+        await updateDoc(doc(eventsCol(clubId), sess.calendarEventId), {
+          isDeleted: true,
+          deletedAt: serverTimestamp(),
+        });
+      } catch {}
+    }
+  }
+  await updateDoc(ref, {
+    isDeleted: true,
+    deletedAt: serverTimestamp(),
+  });
+};
+
+export const getDrillPlanUsageCount = async (clubId, drillId) => {
+  try {
+    const q = query(
+      trainingPlansCol(clubId),
+      where("drillIds", "array-contains", drillId),
+    );
+    const snap = await getDocs(q);
+    return snap.docs.filter((d) => d.data()?.isDeleted !== true).length;
+  } catch {
+    return 0;
+  }
 };
 
 export const upsertFamilyProfile = async (

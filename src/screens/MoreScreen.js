@@ -316,7 +316,7 @@ export default function MoreScreen({ navigation, route }) {
               <View style={{ marginLeft: theme.spacing.md, flex: 1 }}>
                 <Text variant="h3">{profile?.displayName || "User"}</Text>
                 <Text variant="small" style={{ marginTop: 4 }}>
-                  {userRole} • {activeClub?.name || "No Club"}
+                  {userRole} â€¢ {activeClub?.name || "No Club"}
                 </Text>
               </View>
               <TouchableOpacity onPress={handleEditProfile}>
@@ -403,7 +403,7 @@ export default function MoreScreen({ navigation, route }) {
           </Card>
         </View>
 
-        {/* OPERATIONS — all members except players/parents */}
+        {/* OPERATIONS â€” all members except players/parents */}
         {!hideOperations && (
           <View style={styles.section}>
             <Text variant="small" weight="600" style={styles.sectionTitle}>
@@ -445,7 +445,7 @@ export default function MoreScreen({ navigation, route }) {
         </View>
         )}
 
-        {/* TRAINING HUB — staff and coaches */}
+        {/* TRAINING HUB â€” staff and coaches */}
         {isClubStaff && (
           <View style={styles.section}>
             <Text variant="small" weight="600" style={styles.sectionTitle}>
@@ -471,10 +471,10 @@ export default function MoreScreen({ navigation, route }) {
               <MenuItem
                 icon={<ClipboardList color={theme.colors.primary} size={24} />}
                 title="Training Plans"
-                subtitle="Accessible by coach profile"
+                subtitle="View and manage all training plans"
                 isLast
                 onPress={() =>
-                  navigation.navigate("ClubOperations", { initialTab: 4 })
+                  navigation.navigate("TrainingPlans")
                 }
               />
             </Card>

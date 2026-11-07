@@ -3,8 +3,16 @@ import { collection, doc, getDocs, updateDoc } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { useClub } from '../context/ClubContext';
 import { useAuth } from '../context/AuthContext';
-import { ChevronLeft, ChevronRight, Calendar, MapPin, Clock, Check, X, HelpCircle, Trophy, Users, ListChecks } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Calendar, MapPin, Clock, Check, X, HelpCircle, Repeat } from 'lucide-react';
 import Modal from '../components/Modal';
+import {
+  buildOccurrenceDates,
+  describeRecurrence,
+  hasRecurrence,
+  todayIsoDate,
+  toIsoDateLocal,
+  parseIsoDate,
+} from '../utils/recurrence';
 
 export default function UserCalendar() {
   const { selectedClubId, selectedClub } = useClub();
@@ -93,83 +101,162 @@ export default function UserCalendar() {
   // Convert Firebase Date / string into pure YYYY-MM-DD
   const formatLocalDateString = (date) => {
     if (!date) return '';
+    if (typeof date === 'string') {
+      const parsed = parseIsoDate(date);
+      return parsed ? toIsoDateLocal(parsed) : '';
+    }
     const d = new Date(date);
-    const m = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${d.getFullYear()}-${m}-${day}`;
+    if (Number.isNaN(d.getTime())) return '';
+    return toIsoDateLocal(d);
   };
 
-  // Aggregate items by date
-  const getItemsForDate = (date) => {
-    if (!date) return [];
-    const dateStr = formatLocalDateString(date);
+  // ─── Recurrence expansion ───────────────────────────────────────
+  // Expand events / rosters / tasks (including recurring ones) into dated
+  // occurrences covering the visible month, so recurring items appear on
+  // every matching day instead of only on their anchor date.
+  const monthRangeStart = useMemo(
+    () => toIsoDateLocal(new Date(year, month, 1)),
+    [year, month]
+  );
+  const monthRangeEnd = useMemo(
+    () => toIsoDateLocal(new Date(year, month, daysInMonth)),
+    [year, month, daysInMonth]
+  );
 
-    const dayEvents = events.filter(e => e.date === dateStr).map(e => ({
-      ...e,
-      itemType: 'event',
-      primaryType: e.type === 'match' || e.type === 'game' ? 'Match' : 'Event'
-    }));
+  const occurrences = useMemo(() => {
+    const out = [];
 
-    const dayShifts = [];
-    rosters.filter(r => r.date === dateStr).forEach(r => {
-      (r.shifts || []).forEach(s => {
-        dayShifts.push({
-          ...s,
-          itemType: 'shift',
-          rosterId: r.id,
-          rosterTitle: r.title,
-          date: r.date
+    // Club events & fixtures
+    (events || []).forEach((event) => {
+      const baseDate = event.startDate || event.date;
+      if (!baseDate) return;
+      const dates = buildOccurrenceDates(
+        baseDate,
+        event.recurringRule,
+        monthRangeStart,
+        monthRangeEnd,
+        { endDate: event.endDate || event.date }
+      );
+      dates.forEach((occurrenceDate) => {
+        out.push({
+          ...event,
+          date: occurrenceDate,
+          occurrenceDate,
+          itemType: 'event',
+          primaryType: event.type === 'match' || event.type === 'game' ? 'Match' : 'Event',
+          isRecurring: hasRecurrence(event.recurringRule),
         });
       });
     });
 
-    const dayTasks = tasks.filter(t => t.dueDate === dateStr).map(t => ({
-      ...t,
-      itemType: 'task'
-    }));
-
-    return [...dayEvents, ...dayShifts, ...dayTasks];
-  };
-
-  // Filtered lists of items based on chosen activeFilter
-  const allFilteredItems = useMemo(() => {
-    let list = [];
-    events.forEach(e => {
-      list.push({ ...e, itemType: 'event', primaryType: e.type === 'match' || e.type === 'game' ? 'Match' : 'Event' });
-    });
-
-    rosters.forEach(r => {
-      (r.shifts || []).forEach(s => {
-        list.push({ ...s, itemType: 'shift', rosterId: r.id, rosterTitle: r.title, date: r.date });
+    // Volunteer shifts (one entry per shift per occurrence)
+    (rosters || []).forEach((roster) => {
+      if (!roster?.date) return;
+      const dates = buildOccurrenceDates(
+        roster.date,
+        roster.recurringRule,
+        monthRangeStart,
+        monthRangeEnd
+      );
+      const shifts = Array.isArray(roster.shifts) ? roster.shifts : [];
+      dates.forEach((occurrenceDate) => {
+        if (shifts.length === 0) {
+          out.push({
+            itemType: 'shift',
+            rosterId: roster.id,
+            rosterTitle: roster.title,
+            role: roster.title || 'Shift',
+            date: occurrenceDate,
+            occurrenceDate,
+            isRecurring: hasRecurrence(roster.recurringRule),
+          });
+          return;
+        }
+        shifts.forEach((shift) => {
+          out.push({
+            ...shift,
+            itemType: 'shift',
+            rosterId: roster.id,
+            rosterTitle: roster.title,
+            date: occurrenceDate,
+            occurrenceDate,
+            isRecurring: hasRecurrence(roster.recurringRule),
+          });
+        });
       });
     });
 
-    tasks.forEach(t => {
-      list.push({ ...t, itemType: 'task', date: t.dueDate });
+    // Assigned checklist tasks
+    (tasks || []).forEach((task) => {
+      const baseDate = task.startDate || task.dueDate;
+      if (!baseDate) return;
+      const dates = buildOccurrenceDates(
+        baseDate,
+        task.recurringRule,
+        monthRangeStart,
+        monthRangeEnd,
+        { endDate: task.endDate || task.dueDate }
+      );
+      dates.forEach((occurrenceDate) => {
+        out.push({
+          ...task,
+          date: occurrenceDate,
+          occurrenceDate,
+          itemType: 'task',
+          isRecurring: hasRecurrence(task.recurringRule),
+        });
+      });
     });
 
-    return list.filter(item => {
-      if (activeFilter === 'All') return true;
-      if (activeFilter === 'Matches') return item.itemType === 'event' && (item.type === 'match' || item.type === 'game');
-      if (activeFilter === 'Training') return item.itemType === 'event' && item.type === 'training';
-      if (activeFilter === 'Shifts') return item.itemType === 'shift';
-      if (activeFilter === 'Tasks') return item.itemType === 'task';
-      return true;
+    return out;
+  }, [events, rosters, tasks, monthRangeStart, monthRangeEnd]);
+
+  // Aggregate occurrences by date
+  const itemsByDate = useMemo(() => {
+    const map = {};
+    occurrences.forEach((item) => {
+      const key = item.occurrenceDate;
+      if (!key) return;
+      (map[key] = map[key] || []).push(item);
     });
-  }, [events, rosters, tasks, activeFilter]);
+    // Sort each day chronologically
+    Object.keys(map).forEach((key) => {
+      map[key].sort((a, b) => {
+        const aKey = `${a.startTime || a.time || '99:99'}`;
+        const bKey = `${b.startTime || b.time || '99:99'}`;
+        return aKey.localeCompare(bKey);
+      });
+    });
+    return map;
+  }, [occurrences]);
+
+  const getItemsForDate = (date) => {
+    if (!date) return [];
+    return itemsByDate[formatLocalDateString(date)] || [];
+  };
+
+  const matchesFilter = (item) => {
+    if (activeFilter === 'All') return true;
+    if (activeFilter === 'Matches') return item.itemType === 'event' && (item.type === 'match' || item.type === 'game');
+    if (activeFilter === 'Training') return item.itemType === 'event' && item.type === 'training';
+    if (activeFilter === 'Shifts') return item.itemType === 'shift';
+    if (activeFilter === 'Tasks') return item.itemType === 'task';
+    return true;
+  };
+
+  // Filtered lists of items based on chosen activeFilter
+  const allFilteredItems = useMemo(
+    () => occurrences.filter(matchesFilter),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [occurrences, activeFilter]
+  );
 
   // Items for the currently selected day
-  const selectedDayItems = useMemo(() => {
-    const items = getItemsForDate(selectedDate);
-    return items.filter(item => {
-      if (activeFilter === 'All') return true;
-      if (activeFilter === 'Matches') return item.itemType === 'event' && (item.type === 'match' || item.type === 'game');
-      if (activeFilter === 'Training') return item.itemType === 'event' && item.type === 'training';
-      if (activeFilter === 'Shifts') return item.itemType === 'shift';
-      if (activeFilter === 'Tasks') return item.itemType === 'task';
-      return true;
-    });
-  }, [selectedDate, events, rosters, tasks, activeFilter]);
+  const selectedDayItems = useMemo(
+    () => getItemsForDate(selectedDate).filter(matchesFilter),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [selectedDate, itemsByDate, activeFilter]
+  );
 
   // Handle RSVP
   const handleRSVP = async (eventId, status) => {
@@ -273,8 +360,57 @@ export default function UserCalendar() {
     });
   };
 
+  // ─── Google Calendar style helpers ─────────────────────────────
+  // Categorise an aggregated calendar item into a display "kind"
+  const itemKind = (item) => {
+    if (item.itemType === 'task') return 'task';
+    if (item.itemType === 'shift') return 'shift';
+    if (item.itemType === 'event') {
+      return (item.type === 'match' || item.type === 'game') ? 'match' : 'training';
+    }
+    return 'other';
+  };
+
+  const KIND_STYLES = {
+    match:    { bg: '#fef3c7', bar: '#f59e0b', text: '#92400e', label: 'Match' },
+    training: { bg: '#dbeafe', bar: '#3b82f6', text: '#1e40af', label: 'Training' },
+    shift:    { bg: '#d1fae5', bar: '#10b981', text: '#065f46', label: 'Shift' },
+    task:     { bg: '#fee2e2', bar: '#ef4444', text: '#991b1b', label: 'Task' },
+    other:    { bg: '#e2e8f0', bar: '#64748b', text: '#334155', label: 'Event' },
+  };
+
+  const itemTitle = (item) => item.title || item.role || item.rosterTitle || 'Untitled';
+  const itemTime = (item) => item.time || (item.startTime ? `${item.startTime}${item.endTime ? `–${item.endTime}` : ''}` : '');
+
+  // Returns only the items that pass the current filter (used for cell chips)
+  const filteredItemsForDate = (date) => getItemsForDate(date).filter(matchesFilter);
+
+  const goToToday = () => {
+    const now = new Date();
+    setCurrentDate(now);
+    setSelectedDate(now);
+  };
+
+  // Open the appropriate details modal when a chip is clicked
+  const handleItemClick = (item, e) => {
+    e?.stopPropagation();
+    if (item.itemType === 'event') {
+      setSelectedEventDetails(item);
+    } else {
+      const parsed = parseIsoDate(item.date);
+      if (parsed) setSelectedDate(parsed);
+    }
+  };
+
+  const detailRecurrence = selectedEventDetails?.recurringRule
+    ? describeRecurrence(
+        selectedEventDetails.recurringRule,
+        selectedEventDetails.startDate || selectedEventDetails.date
+      )
+    : '';
+
   return (
-    <div style={{ maxWidth: '1000px', margin: '0 auto', padding: '24px' }}>
+    <div style={{ maxWidth: '1500px', margin: '0 auto', padding: '24px' }}>
       
       {/* Page Header */}
       <div className="page-header" style={{ marginBottom: '24px' }}>
@@ -308,17 +444,80 @@ export default function UserCalendar() {
         ))}
       </div>
 
-      {/* Grid: Left Calendar / Right Selected Day Agenda */}
-      <div className="dashboard-grid" style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '24px' }}>
+      {/* Colour Legend — pinned at the top so meanings are visible without scrolling */}
+      <div
+        style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: '10px',
+          marginBottom: '20px',
+          padding: '12px 16px',
+          background: '#ffffff',
+          border: '1px solid var(--border)',
+          borderRadius: '14px',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.04)'
+        }}
+      >
+        <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-secondary)', marginRight: '4px', alignSelf: 'center' }}>
+          Colour key:
+        </span>
+        {[
+          { kind: 'match', label: 'Matches' },
+          { kind: 'training', label: 'Training' },
+          { kind: 'shift', label: 'Duties / Shifts' },
+          { kind: 'task', label: 'My Tasks' },
+        ].map(({ kind, label }) => {
+          const style = KIND_STYLES[kind];
+          return (
+            <span
+              key={kind}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                background: style.bg,
+                color: style.text,
+                borderLeft: `4px solid ${style.bar}`,
+                borderRadius: '8px',
+                padding: '4px 12px',
+                fontSize: '12px',
+                fontWeight: 600
+              }}
+            >
+              {label}
+            </span>
+          );
+        })}
+      </div>
+
+      {/* Grid: Full-width month calendar, agenda below */}
+      <div className="dashboard-grid" style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '24px' }}>
         
         {/* Left Card: Month Grid Calendar */}
         <div className="card shadow-sm" style={{ border: '1px solid var(--border)', background: '#ffffff', borderRadius: '16px', padding: '20px' }}>
           
           {/* Calendar Header Controls */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-            <h3 style={{ margin: 0, fontWeight: 800, fontSize: '18px', color: 'var(--text)' }}>
-              {monthNames[month]} {year}
-            </h3>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <h3 style={{ margin: 0, fontWeight: 800, fontSize: '18px', color: 'var(--text)' }}>
+                {monthNames[month]} {year}
+              </h3>
+              <button
+                onClick={goToToday}
+                style={{
+                  padding: '5px 12px',
+                  borderRadius: '8px',
+                  border: '1px solid var(--border)',
+                  background: '#ffffff',
+                  color: 'var(--text-secondary)',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  cursor: 'pointer'
+                }}
+              >
+                Today
+              </button>
+            </div>
             <div style={{ display: 'flex', gap: '4px' }}>
               <button onClick={prevMonth} className="btn-icon" style={{ padding: '6px', border: '1px solid var(--border)', borderRadius: '8px' }}>
                 <ChevronLeft size={16} />
@@ -337,78 +536,97 @@ export default function UserCalendar() {
           {/* Days Grid */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '6px' }}>
             {days.map((date, idx) => {
-              if (!date) return <div key={`empty-${idx}`} style={{ height: '55px' }} />;
+              if (!date) return <div key={`empty-${idx}`} style={{ minHeight: '132px' }} />;
               const isSel = isSelected(date);
               const isTdy = isToday(date);
-              const hasMatch = hasItem(date, 'match');
-              const hasTrain = hasItem(date, 'training');
-              const hasShift = hasItem(date, 'shift');
-              const hasTask = hasItem(date, 'task');
+              const dayItems = filteredItemsForDate(date);
+              const maxChips = 3;
 
               return (
                 <button
                   key={`day-${idx}`}
                   onClick={() => setSelectedDate(date)}
                   style={{
-                    height: '55px',
+                    minHeight: '132px',
                     display: 'flex',
                     flexDirection: 'column',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    padding: '6px',
+                    alignItems: 'stretch',
+                    padding: '6px 7px',
                     border: '1px solid',
                     borderColor: isSel ? 'var(--primary)' : 'var(--border-light, #f1f5f9)',
                     borderRadius: '12px',
-                    background: isSel 
-                      ? 'rgba(16, 185, 129, 0.08)' 
-                      : (isTdy ? '#f1f5f9' : '#ffffff'),
-                    color: isSel ? 'var(--primary)' : 'var(--text)',
-                    fontWeight: isSel || isTdy ? 700 : 500,
+                    background: isSel
+                      ? 'rgba(16, 185, 129, 0.08)'
+                      : (isTdy ? '#f8fafc' : '#ffffff'),
+                    color: 'var(--text)',
                     fontSize: '13px',
                     cursor: 'pointer',
-                    transition: 'all 0.2s',
-                    position: 'relative'
+                    transition: 'all 0.15s',
+                    position: 'relative',
+                    overflow: 'hidden',
+                    textAlign: 'left'
                   }}
                 >
+                  {/* Day number */}
                   <span style={{
                     display: 'inline-flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    width: '20px',
+                    alignSelf: 'flex-start',
+                    minWidth: '20px',
                     height: '20px',
+                    padding: '0 5px',
                     borderRadius: '50%',
+                    fontSize: '12px',
+                    fontWeight: isSel || isTdy ? 700 : 500,
                     background: isTdy && !isSel ? 'var(--primary)' : 'none',
-                    color: isTdy && !isSel ? '#ffffff' : 'inherit'
+                    color: isTdy && !isSel ? '#ffffff' : (isSel ? 'var(--primary)' : 'inherit')
                   }}>
                     {date.getDate()}
                   </span>
 
-                  {/* Indicator Dots */}
-                  <div style={{ display: 'flex', gap: '3px', justifyContent: 'center', width: '100%' }}>
-                    {hasMatch && <span style={{ width: '5px', height: '5px', borderRadius: '50%', backgroundColor: '#f59e0b' }} title="Match" />}
-                    {hasTrain && <span style={{ width: '5px', height: '5px', borderRadius: '50%', backgroundColor: '#3b82f6' }} title="Training" />}
-                    {hasShift && <span style={{ width: '5px', height: '5px', borderRadius: '50%', backgroundColor: '#10b981' }} title="Shift" />}
-                    {hasTask && <span style={{ width: '5px', height: '5px', borderRadius: '50%', backgroundColor: '#ef4444' }} title="Task" />}
+                  {/* Google-Calendar style event chips */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', marginTop: '3px', width: '100%', overflow: 'hidden' }}>
+                    {dayItems.slice(0, maxChips).map((item, i) => {
+                      const style = KIND_STYLES[itemKind(item)];
+                      return (
+                        <span
+                          key={`chip-${i}`}
+                          onClick={(e) => handleItemClick(item, e)}
+                          title={`${style.label}: ${itemTitle(item)}${itemTime(item) ? ` (${itemTime(item)})` : ''}`}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '3px',
+                            width: '100%',
+                            background: style.bg,
+                            color: style.text,
+                            borderRadius: '4px',
+                            borderLeft: `3px solid ${style.bar}`,
+                            padding: '2px 5px',
+                            fontSize: '10.5px',
+                            fontWeight: 600,
+                            lineHeight: 1.3,
+                            whiteSpace: 'normal',
+                            wordBreak: 'break-word',
+                            textAlign: 'left',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          {item.isRecurring && <Repeat size={9} style={{ flexShrink: 0 }} />}
+                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{itemTitle(item)}</span>
+                        </span>
+                      );
+                    })}
+                    {dayItems.length > maxChips && (
+                      <span style={{ fontSize: '9.5px', fontWeight: 700, color: 'var(--text-secondary)', paddingLeft: '2px' }}>
+                        +{dayItems.length - maxChips} more
+                      </span>
+                    )}
                   </div>
                 </button>
               );
             })}
-          </div>
-
-          {/* Legend Banner */}
-          <div style={{ borderTop: '1px solid var(--border)', marginTop: '20px', paddingTop: '12px', display: 'flex', justifyContent: 'center', gap: '16px', fontSize: '11px', flexWrap: 'wrap' }}>
-            <span style={{ display: 'flex', alignItems: 'center', gap: '5px', color: 'var(--text-secondary)' }}>
-              <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#f59e0b' }} /> Matches
-            </span>
-            <span style={{ display: 'flex', alignItems: 'center', gap: '5px', color: 'var(--text-secondary)' }}>
-              <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#3b82f6' }} /> Training
-            </span>
-            <span style={{ display: 'flex', alignItems: 'center', gap: '5px', color: 'var(--text-secondary)' }}>
-              <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#10b981' }} /> Duties/Shifts
-            </span>
-            <span style={{ display: 'flex', alignItems: 'center', gap: '5px', color: 'var(--text-secondary)' }}>
-              <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#ef4444' }} /> My Tasks
-            </span>
           </div>
 
         </div>
@@ -698,16 +916,22 @@ export default function UserCalendar() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '20px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: 'var(--text-secondary)' }}>
                 <Calendar size={16} color="var(--primary)" />
-                <span>Date: {selectedEventDetails.date}</span>
+                <span>Date: {selectedEventDetails.occurrenceDate || selectedEventDetails.date}</span>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: 'var(--text-secondary)' }}>
                 <Clock size={16} color="var(--primary)" />
-                <span>Time: {selectedEventDetails.time || 'TBA'}</span>
+                <span>Time: {selectedEventDetails.isAllDay ? 'All Day' : (selectedEventDetails.time || selectedEventDetails.startTime || 'TBA')}</span>
               </div>
               {selectedEventDetails.location && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: 'var(--text-secondary)' }}>
                   <MapPin size={16} color="var(--primary)" />
                   <span>Location: {selectedEventDetails.location}</span>
+                </div>
+              )}
+              {detailRecurrence && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: 'var(--text-secondary)' }}>
+                  <Repeat size={16} color="var(--primary)" />
+                  <span>Repeats: {detailRecurrence}</span>
                 </div>
               )}
             </div>

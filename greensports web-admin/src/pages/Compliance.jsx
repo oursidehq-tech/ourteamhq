@@ -234,7 +234,8 @@ const Compliance = () => {
 
       setShowFormModal(false);
       setEditingFormId(null);
-      loadCompliance();
+      setActiveTab('forms');
+      await loadCompliance();
     } catch (err) {
       alert('Error saving form: ' + err.message);
     } finally {
@@ -325,6 +326,13 @@ const Compliance = () => {
           <div className="badge badge-info mt-sm" style={{ fontSize: '10px', padding: '2px 6px' }}>{row.type}</div>
         </div>
       )
+    },
+    { 
+      header: 'Source Form', 
+      accessor: 'formTitle',
+      render: (val) => val
+        ? <span className="badge badge-default" style={{ fontSize: '10px', padding: '2px 6px' }}>{val}</span>
+        : <span className="text-muted text-xs">—</span>
     },
     { 
       header: 'Status', 

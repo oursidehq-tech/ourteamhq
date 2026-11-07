@@ -97,6 +97,43 @@ export const complianceService = {
     });
   },
 
+  /**
+   * Fetch compliance submissions belonging to a specific user.
+   * Used by the member portal to show submitted / approved / expired status.
+   */
+  async getUserSubmissions(clubId, uid) {
+    if (!clubId || !uid) return [];
+    try {
+      const subRef = collection(db, 'clubs', clubId, 'compliance');
+      try {
+        const snap = await getDocs(query(subRef, where('uid', '==', uid)));
+        return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      } catch {
+        const snap = await getDocs(subRef);
+        return snap.docs
+          .map(doc => ({ id: doc.id, ...doc.data() }))
+          .filter(d => d.uid === uid);
+      }
+    } catch (err) {
+      console.warn('Error fetching user submissions:', err);
+      return [];
+    }
+  },
+
+  /**
+   * Submit a single compliance requirement document from the member portal.
+   * Writes into clubs/{clubId}/compliance so it appears in the admin review queue.
+   */
+  async submitComplianceDocument(clubId, data) {
+    const subRef = collection(db, 'clubs', clubId, 'compliance');
+    return await addDoc(subRef, {
+      status: 'Pending',
+      ...data,
+      submittedAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+  },
+
   async deleteComplianceForm(clubId, formId) {
     const formRef = doc(db, 'clubs', clubId, 'complianceForms', formId);
     return await deleteDoc(formRef);

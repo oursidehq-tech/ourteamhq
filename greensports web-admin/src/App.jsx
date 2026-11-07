@@ -12,6 +12,7 @@ import TeamsPage from './pages/TeamsPage';
 import GroupsPage from './pages/GroupsPage';
 import PostsPage from './pages/PostsPage';
 import EventsPage from './pages/EventsPage';
+import AdminCalendar from './pages/AdminCalendar';
 import ProductsPage from './pages/ProductsPage';
 import OrdersPage from './pages/OrdersPage';
 import TasksPage from './pages/TasksPage';
@@ -557,8 +558,12 @@ import UserOrders from './pages/UserOrders';
 import UserTasks from './pages/UserTasks';
 import UserTraining from './pages/UserTraining';
 import UserProfile from './pages/UserProfile';
+import UserCompliance from './pages/UserCompliance';
+import UserNotifications from './pages/UserNotifications';
+import UserBookings from './pages/UserBookings';
+import UserSponsors from './pages/UserSponsors';
+import UserReports from './pages/UserReports';
 import ClubInfo from './pages/ClubInfo';
-
 function ProtectedRoutes() {
   const { isAuthenticated, loading, portalMode } = useAuth();
   if (loading) {
@@ -622,6 +627,7 @@ function ProtectedRoutes() {
           <Route path="groups" element={<GroupsPage />} />
           <Route path="posts" element={<PostsPage />} />
           <Route path="events" element={<EventsPage />} />
+          <Route path="admin-calendar" element={<AdminCalendar />} />
           <Route path="products" element={<ProductsPage />} />
           <Route path="shop" element={<ProductsPage />} />
           <Route path="orders" element={<OrdersPage />} />
@@ -649,6 +655,11 @@ function ProtectedRoutes() {
           <Route path="user-tasks" element={<UserTasks />} />
           <Route path="user-training" element={<UserTraining />} />
           <Route path="user-profile" element={<UserProfile />} />
+          <Route path="user-compliance" element={<UserCompliance />} />
+          <Route path="user-notifications" element={<UserNotifications />} />
+          <Route path="user-bookings" element={<UserBookings />} />
+          <Route path="user-sponsors" element={<UserSponsors />} />
+          <Route path="user-reports" element={<UserReports />} />
           <Route path="club-info" element={<ClubInfo />} />
         </Route>
       </Routes>
