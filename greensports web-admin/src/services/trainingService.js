@@ -27,6 +27,61 @@ export const PLAN_SECTIONS = [
 
 export const PLAN_STATUSES = ['draft', 'active'];
 
+// ─── Plan Access Control Helpers (Coach-Only & Private by Default) ───────────
+/**
+ * Evaluates whether a user can access a training plan.
+ * Strict rules per brief:
+ * 1. User must hold a current Coach role (or Admin/Owner). Multi-role Coach + Parent is eligible as Coach.
+ * 2. Plans default Private to creator/admin.
+ * 3. Shared only with explicitly selected coach USERS or existing GROUPS (intersected with eligible coaches).
+ * 4. teamId is a session logistics reference ONLY and NEVER grants plan access.
+ */
+export const isUserEligibleCoach = (user, memberRecord, profile, clubId) => {
+  if (!user) return false;
+  const roles = new Set();
+  (memberRecord?.roles || []).forEach(r => roles.add(String(r).trim().toLowerCase()));
+  if (memberRecord?.role) roles.add(String(memberRecord.role).trim().toLowerCase());
+  
+  const membership = profile?.clubMemberships?.find(m => m.clubId === clubId);
+  if (membership) {
+    (membership.roles || []).forEach(r => roles.add(String(r).trim().toLowerCase()));
+    if (membership.role) roles.add(String(membership.role).trim().toLowerCase());
+  }
+  if (profile?.role) roles.add(String(profile.role).trim().toLowerCase());
+
+  return roles.has('coach') || roles.has('owner') || roles.has('admin');
+};
+
+export const canUserAccessPlan = (user, plan, { isCoach = false, isAdmin = false, userGroupIds = [] } = {}) => {
+  if (!user || !plan) return false;
+  if (isAdmin) return true;
+  if (!isCoach) return false; // Non-coaches are strictly denied
+
+  // Creator has full access
+  if (plan.createdBy === user.uid) return true;
+
+  // Explicit user share
+  if (Array.isArray(plan.sharedWithUserIds) && plan.sharedWithUserIds.includes(user.uid)) {
+    return true;
+  }
+
+  // Explicit group share (user must be a member of the group AND isCoach is true)
+  if (Array.isArray(plan.sharedWithGroupIds) && Array.isArray(userGroupIds)) {
+    const hasGroupMatch = plan.sharedWithGroupIds.some(gId => userGroupIds.includes(gId));
+    if (hasGroupMatch) return true;
+  }
+
+  return false;
+};
+
+export const getPlanAccessLabel = (plan) => {
+  if (!plan) return 'Private';
+  const userCount = Array.isArray(plan.sharedWithUserIds) ? plan.sharedWithUserIds.length : 0;
+  const groupCount = Array.isArray(plan.sharedWithGroupIds) ? plan.sharedWithGroupIds.length : 0;
+  const total = userCount + groupCount;
+  return total > 0 ? `Shared (${total})` : 'Private';
+};
+
 // ─── Collection helpers ──────────────────────────────────────────────────────
 const drillsCol      = (clubId) => collection(db, 'clubs', clubId, 'drills');
 const plansCol       = (clubId) => collection(db, 'clubs', clubId, 'trainingPlans');
@@ -313,7 +368,7 @@ export const trainingService = {
   /**
    * Schedule Session:
    * 1. Creates TrainingSession record
-   * 2. Pushes to Team Calendar in `clubs/{clubId}/events`
+   * 2. Pushes to Team Calendar in `clubs/{clubId}/events` (no private plan leak)
    * 3. Pushes notification to team members in `clubs/{clubId}/notifications`
    */
   createSession: async (clubId, {
@@ -342,6 +397,11 @@ export const trainingService = {
       locked: Boolean(locked),
       isDeleted: false,
       createdBy: createdBy || '',
+      history: [{
+        action: 'scheduled',
+        by: createdBy || 'Coach',
+        timestamp: new Date().toISOString()
+      }],
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp()
     };
@@ -360,20 +420,21 @@ export const trainingService = {
       }
     }
 
-    // 2. Push to Calendar events collection
+    // 2. Push to Calendar events collection (Strictly logistics only — no private plan title or drills)
     let eventId = null;
     try {
       const eventRef = doc(eventsCol(clubId));
       eventId = eventRef.id;
       await setDoc(eventRef, {
-        title: `Training: ${planTitle || 'Team Session'}`,
-        description: `Training session scheduled from plan "${planTitle}". Location: ${location || 'Club Ground'}.`,
+        title: `Training: ${teamName || 'Team Training'}`,
+        description: `Training session at ${location || 'Club Ground'}.`,
         date: eventDate || new Date().toISOString().slice(0, 10),
         startTime: eventStartTime || '18:00',
         endTime: '',
         location: location || 'Club Ground',
         type: 'training',
         category: 'training',
+        status: 'scheduled',
         teamId: teamId || null,
         assignedGroupId: teamId || null,
         assignedGroupIds: teamId ? [teamId, teamId.toLowerCase()] : [],
@@ -381,7 +442,6 @@ export const trainingService = {
         groupType: teamId ? 'Team' : 'Club',
         openToAll: !teamId,
         trainingSessionId: sessionId,
-        planId: planId,
         createdBy: createdBy || '',
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp()
@@ -393,21 +453,21 @@ export const trainingService = {
       console.warn('Failed to push training session to calendar:', e);
     }
 
-    // 3. Push notifications for players / parents
+    // 3. Push notifications for players / parents (Logistics only)
     try {
       const notifRef = doc(notifsCol(clubId));
       const prettyDate = eventDate ? `${eventDate} ${eventStartTime ? 'at ' + eventStartTime : ''}` : 'Upcoming date';
       await setDoc(notifRef, {
-        title: `New Training: ${planTitle || 'Team Session'}`,
-        message: `A training session has been scheduled for ${prettyDate} at ${location || 'Club Ground'}. Open to view drills.`,
-        body: `A training session has been scheduled for ${prettyDate} at ${location || 'Club Ground'}. Open to view drills.`,
+        title: `${teamName || 'Team'} — training scheduled`,
+        message: `Training scheduled for ${prettyDate} at ${location || 'Club Ground'}. Check session logistics in My Teams.`,
+        body: `Training scheduled for ${prettyDate} at ${location || 'Club Ground'}. Check session logistics in My Teams.`,
         recipientId: teamId || 'all',
+        category: 'teams',
         clubId,
         read: false,
         type: 'training',
         meta: {
           trainingSessionId: sessionId,
-          planId: planId,
           teamId: teamId || null
         },
         sentBy: 'coach',
@@ -424,6 +484,335 @@ export const trainingService = {
   updateSession: async (clubId, sessionId, data) => {
     const ref = doc(sessionsCol(clubId), sessionId);
     return await updateDoc(ref, { ...data, updatedAt: serverTimestamp() });
+  },
+
+  /**
+   * Update session logistics (date, time, venue, notes) without touching coaching plan.
+   * Syncs linked calendar event and notifies affected members.
+   */
+  updateSessionLogistics: async (clubId, sessionId, {
+    scheduledAt,
+    location,
+    logisticsNotes = '',
+    updatedBy = '',
+    updatedByName = 'Coach',
+    updatedByRole = 'Coach'
+  }) => {
+    const sessionRef = doc(sessionsCol(clubId), sessionId);
+    const snap = await getDoc(sessionRef);
+    if (!snap.exists()) throw new Error('Session not found');
+    const session = snap.data();
+
+    let eventDate = '';
+    let eventStartTime = '';
+    if (scheduledAt) {
+      if (scheduledAt.includes('T')) {
+        const [d, t] = scheduledAt.split('T');
+        eventDate = d;
+        eventStartTime = t.slice(0, 5);
+      } else {
+        eventDate = scheduledAt.slice(0, 10);
+      }
+    }
+
+    const nextHistory = Array.isArray(session.history) ? [...session.history] : [];
+    nextHistory.push({
+      action: 'logistics_updated',
+      by: updatedByName,
+      role: updatedByRole,
+      details: `Rescheduled to ${scheduledAt} at ${location}`,
+      timestamp: new Date().toISOString()
+    });
+
+    await updateDoc(sessionRef, {
+      scheduledAt: scheduledAt || session.scheduledAt,
+      location: location != null ? location : session.location,
+      logisticsNotes,
+      history: nextHistory,
+      updatedAt: serverTimestamp()
+    });
+
+    // Sync linked calendar event
+    if (session.calendarEventId) {
+      try {
+        await updateDoc(doc(eventsCol(clubId), session.calendarEventId), {
+          date: eventDate || session.scheduledAt?.slice(0, 10),
+          startTime: eventStartTime || '18:00',
+          location: location != null ? location : session.location,
+          updatedAt: serverTimestamp()
+        });
+      } catch (err) {
+        console.warn('Error syncing calendar event logistics:', err);
+      }
+    }
+
+    // Dispatch update notification
+    try {
+      const notifRef = doc(notifsCol(clubId));
+      const prettyDate = eventDate ? `${eventDate} ${eventStartTime ? 'at ' + eventStartTime : ''}` : 'Upcoming date';
+      await setDoc(notifRef, {
+        title: `${session.teamName || 'Team'} — training updated`,
+        message: `Tuesday training now starts at ${prettyDate} at ${location || session.location}.`,
+        body: `Tuesday training now starts at ${prettyDate} at ${location || session.location}.`,
+        recipientId: session.teamId || 'all',
+        category: 'teams',
+        clubId,
+        read: false,
+        type: 'training',
+        meta: {
+          trainingSessionId: sessionId,
+          teamId: session.teamId || null
+        },
+        sentBy: updatedByRole,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+    } catch (e) {
+      console.warn('Failed to send logistics update notification:', e);
+    }
+  },
+
+  /**
+   * Cancel an individual training session with a reason.
+   * Keeps session visible, syncs calendar event, notifies team.
+   */
+  cancelSession: async (clubId, sessionId, {
+    reason = '',
+    cancelledBy = '',
+    cancelledByName = 'Coach',
+    cancelledByRole = 'Coach'
+  }) => {
+    const sessionRef = doc(sessionsCol(clubId), sessionId);
+    const snap = await getDoc(sessionRef);
+    if (!snap.exists()) throw new Error('Session not found');
+    const session = snap.data();
+
+    const nextHistory = Array.isArray(session.history) ? [...session.history] : [];
+    nextHistory.push({
+      action: 'cancelled',
+      reason,
+      by: cancelledByName,
+      role: cancelledByRole,
+      timestamp: new Date().toISOString()
+    });
+
+    await updateDoc(sessionRef, {
+      status: 'cancelled',
+      cancellationReason: reason,
+      cancelledAt: serverTimestamp(),
+      cancelledBy: { uid: cancelledBy, name: cancelledByName, role: cancelledByRole },
+      history: nextHistory,
+      updatedAt: serverTimestamp()
+    });
+
+    // Update linked calendar event
+    if (session.calendarEventId) {
+      try {
+        await updateDoc(doc(eventsCol(clubId), session.calendarEventId), {
+          status: 'cancelled',
+          cancellationReason: reason,
+          title: `[Cancelled] Training: ${session.teamName || 'Team'}`,
+          updatedAt: serverTimestamp()
+        });
+      } catch (e) {
+        console.warn('Failed to update calendar event cancellation:', e);
+      }
+    }
+
+    // Dispatch cancellation notification
+    try {
+      const notifRef = doc(notifsCol(clubId));
+      await setDoc(notifRef, {
+        title: `${session.teamName || 'Team'} — training cancelled`,
+        message: `Training on ${session.scheduledAt?.replace('T', ' ')} has been cancelled. Reason: ${reason || 'Unspecified'}`,
+        body: `Training on ${session.scheduledAt?.replace('T', ' ')} has been cancelled. Reason: ${reason || 'Unspecified'}`,
+        recipientId: session.teamId || 'all',
+        category: 'teams',
+        clubId,
+        read: false,
+        type: 'training_cancellation',
+        meta: {
+          trainingSessionId: sessionId,
+          teamId: session.teamId || null,
+          reason
+        },
+        sentBy: cancelledByRole,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+    } catch (e) {
+      console.warn('Failed to dispatch cancellation notification:', e);
+    }
+  },
+
+  /**
+   * Reinstate a previously cancelled training session.
+   * Restores status, updates calendar event, sends fresh notification.
+   */
+  reinstateSession: async (clubId, sessionId, {
+    reinstatedBy = '',
+    reinstatedByName = 'Coach',
+    reinstatedByRole = 'Coach'
+  }) => {
+    const sessionRef = doc(sessionsCol(clubId), sessionId);
+    const snap = await getDoc(sessionRef);
+    if (!snap.exists()) throw new Error('Session not found');
+    const session = snap.data();
+
+    const nextHistory = Array.isArray(session.history) ? [...session.history] : [];
+    nextHistory.push({
+      action: 'reinstated',
+      by: reinstatedByName,
+      role: reinstatedByRole,
+      timestamp: new Date().toISOString()
+    });
+
+    await updateDoc(sessionRef, {
+      status: 'scheduled',
+      cancellationReason: null,
+      cancelledAt: null,
+      reinstatedAt: serverTimestamp(),
+      reinstatedBy: { uid: reinstatedBy, name: reinstatedByName, role: reinstatedByRole },
+      history: nextHistory,
+      updatedAt: serverTimestamp()
+    });
+
+    if (session.calendarEventId) {
+      try {
+        await updateDoc(doc(eventsCol(clubId), session.calendarEventId), {
+          status: 'scheduled',
+          cancellationReason: null,
+          title: `Training: ${session.teamName || 'Team'}`,
+          updatedAt: serverTimestamp()
+        });
+      } catch (e) {
+        console.warn('Failed to reinstate calendar event:', e);
+      }
+    }
+
+    // Fresh notification
+    try {
+      const notifRef = doc(notifsCol(clubId));
+      await setDoc(notifRef, {
+        title: `${session.teamName || 'Team'} — training reinstated`,
+        message: `Training on ${session.scheduledAt?.replace('T', ' ')} at ${session.location} has been reinstated.`,
+        body: `Training on ${session.scheduledAt?.replace('T', ' ')} at ${session.location} has been reinstated.`,
+        recipientId: session.teamId || 'all',
+        category: 'teams',
+        clubId,
+        read: false,
+        type: 'training',
+        meta: {
+          trainingSessionId: sessionId,
+          teamId: session.teamId || null
+        },
+        sentBy: reinstatedByRole,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+    } catch (e) {
+      console.warn('Failed to dispatch reinstatement notification:', e);
+    }
+  },
+
+  /**
+   * Admin Bulk Training Cancellation:
+   * Select date/time window, optional team and venue filters.
+   * Cancels individual occurrences without touching recurring definitions or matches/events.
+   */
+  bulkCancelTrainingSessions: async (clubId, {
+    startDate,
+    endDate,
+    teamId = '',
+    venue = '',
+    reason = '',
+    cancelledBy = '',
+    cancelledByName = 'Administrator',
+    cancelledByRole = 'Admin'
+  }) => {
+    const q = query(sessionsCol(clubId), where('isDeleted', '==', false));
+    const snap = await getDocs(q);
+    const sessions = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+    const matching = sessions.filter(s => {
+      if (s.status === 'cancelled') return false;
+      const at = s.scheduledAt || '';
+      if (startDate && at < startDate) return false;
+      if (endDate && at > endDate) return false;
+      if (teamId && s.teamId !== teamId) return false;
+      if (venue && !(s.location || '').toLowerCase().includes(venue.toLowerCase())) return false;
+      return true;
+    });
+
+    if (matching.length === 0) {
+      return { count: 0, affectedSessions: [] };
+    }
+
+    const teamsNotified = new Set();
+
+    for (const session of matching) {
+      const nextHistory = Array.isArray(session.history) ? [...session.history] : [];
+      nextHistory.push({
+        action: 'bulk_cancelled',
+        reason,
+        by: cancelledByName,
+        role: cancelledByRole,
+        timestamp: new Date().toISOString()
+      });
+
+      await updateDoc(doc(sessionsCol(clubId), session.id), {
+        status: 'cancelled',
+        cancellationReason: reason,
+        cancelledAt: serverTimestamp(),
+        cancelledBy: { uid: cancelledBy, name: cancelledByName, role: cancelledByRole },
+        history: nextHistory,
+        updatedAt: serverTimestamp()
+      });
+
+      if (session.calendarEventId) {
+        try {
+          await updateDoc(doc(eventsCol(clubId), session.calendarEventId), {
+            status: 'cancelled',
+            cancellationReason: reason,
+            title: `[Cancelled] Training: ${session.teamName || 'Team'}`,
+            updatedAt: serverTimestamp()
+          });
+        } catch {
+          // ignore
+        }
+      }
+
+      // Group notifications by team to prevent duplicate spam
+      const tKey = session.teamId || 'all';
+      if (!teamsNotified.has(tKey)) {
+        teamsNotified.add(tKey);
+        try {
+          const notifRef = doc(notifsCol(clubId));
+          await setDoc(notifRef, {
+            title: `${session.teamName || 'Club'} — training cancelled`,
+            message: `Training between ${startDate ? startDate.slice(0, 10) : ''} and ${endDate ? endDate.slice(0, 10) : ''} has been cancelled. Reason: ${reason || 'Adverse weather / ground closure'}`,
+            body: `Training between ${startDate ? startDate.slice(0, 10) : ''} and ${endDate ? endDate.slice(0, 10) : ''} has been cancelled. Reason: ${reason || 'Adverse weather / ground closure'}`,
+            recipientId: session.teamId || 'all',
+            category: 'teams',
+            clubId,
+            read: false,
+            type: 'training_cancellation',
+            meta: {
+              bulkCancellation: true,
+              teamId: session.teamId || null,
+              reason
+            },
+            sentBy: cancelledByRole,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp()
+          });
+        } catch (e) {
+          console.warn('Bulk cancellation notification error:', e);
+        }
+      }
+    }
+
+    return { count: matching.length, affectedSessions: matching };
   },
 
   deleteSession: async (clubId, sessionId) => {

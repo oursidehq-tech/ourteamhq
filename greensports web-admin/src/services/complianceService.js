@@ -121,17 +121,68 @@ export const complianceService = {
   },
 
   /**
+   * Helper to compute dynamic compliance status based on submission and expiry date.
+   * Returns: 'Current' | 'Expiring soon' | 'Pending review' | 'Expired' | 'Rejected' | 'Missing'
+   */
+  calculateStatus(sub, req) {
+    if (!sub) return 'Missing';
+    const s = String(sub.status || '').toLowerCase();
+    if (s === 'pending' || s === 'awaiting review' || s === 'pending review') return 'Pending review';
+    if (s === 'rejected') return 'Rejected';
+
+    const expStr = sub.expiryDate || sub.expiry;
+    if (!expStr) return 'Current';
+
+    const exp = new Date(expStr);
+    if (isNaN(exp.getTime())) return 'Current';
+
+    const now = new Date();
+    const diffDays = Math.ceil((exp.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+
+    if (diffDays < 0) return 'Expired';
+    if (diffDays <= 30) return 'Expiring soon';
+    return 'Current';
+  },
+
+  /**
    * Submit a single compliance requirement document from the member portal.
    * Writes into clubs/{clubId}/compliance so it appears in the admin review queue.
+   * Dispatches reviewer alert.
    */
   async submitComplianceDocument(clubId, data) {
     const subRef = collection(db, 'clubs', clubId, 'compliance');
-    return await addDoc(subRef, {
+    const docRef = await addDoc(subRef, {
       status: 'Pending',
       ...data,
       submittedAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
+
+    // Dispatch reviewer notification in clubs/{clubId}/notifications
+    try {
+      const notifsCol = collection(db, 'clubs', clubId, 'notifications');
+      await addDoc(notifsCol, {
+        title: `Compliance submission: ${data.requirementName || data.name || 'Document'}`,
+        message: `${data.userName || data.memberName || 'A member'} submitted ${data.requirementName || 'evidence'} for review.`,
+        body: `${data.userName || data.memberName || 'A member'} submitted ${data.requirementName || 'evidence'} for review.`,
+        recipientId: 'admin',
+        category: 'compliance',
+        clubId,
+        read: false,
+        type: 'compliance',
+        meta: {
+          submissionId: docRef.id,
+          memberId: data.memberId || data.uid || null,
+          requirementName: data.requirementName || data.name
+        },
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+    } catch (e) {
+      console.warn('Failed to dispatch compliance submission alert:', e);
+    }
+
+    return docRef;
   },
 
   async deleteComplianceForm(clubId, formId) {
@@ -139,7 +190,7 @@ export const complianceService = {
     return await deleteDoc(formRef);
   },
 
-  async updateComplianceStatus(clubId, id, status, notes = '') {
+  async updateComplianceStatus(clubId, id, status, notes = '', itemData = {}) {
     // Try updating subcollection doc first
     try {
       const docRef = doc(db, 'clubs', clubId, 'compliance', id);
@@ -149,22 +200,53 @@ export const complianceService = {
         reviewedAt: serverTimestamp(),
         updatedAt: serverTimestamp()
       });
-      return;
     } catch (e) {
       console.warn('Subcollection update fallback:', e);
+      try {
+        const rootDocRef = doc(db, COMPLIANCE_COLLECTION, id);
+        await updateDoc(rootDocRef, {
+          status,
+          reviewNotes: notes,
+          reviewedAt: serverTimestamp(),
+          updatedAt: serverTimestamp()
+        });
+      } catch (err) {
+        console.error('Failed updating compliance status:', err);
+      }
     }
 
-    // Fallback to root doc
+    // Dispatch notification to user about status change
     try {
-      const docRef = doc(db, COMPLIANCE_COLLECTION, id);
-      await updateDoc(docRef, {
-        status,
-        reviewNotes: notes,
-        reviewedAt: serverTimestamp(),
-        updatedAt: serverTimestamp()
-      });
-    } catch (e) {
-      console.error('Failed updating compliance status:', e);
+      const recipientId = itemData.uid || itemData.userId || itemData.memberId;
+      if (recipientId) {
+        const notifsCol = collection(db, 'clubs', clubId, 'notifications');
+        const isApproved = status.toLowerCase() === 'approved';
+        await addDoc(notifsCol, {
+          title: isApproved 
+            ? `${itemData.requirementName || 'Compliance'} approved`
+            : `${itemData.requirementName || 'Compliance'} needs resubmission`,
+          message: isApproved
+            ? `Your ${itemData.requirementName || 'compliance check'} has been approved.`
+            : (notes || `The uploaded document was rejected. Please submit a clearer copy.`),
+          body: isApproved
+            ? `Your ${itemData.requirementName || 'compliance check'} has been approved.`
+            : (notes || `The uploaded document was rejected. Please submit a clearer copy.`),
+          recipientId,
+          category: 'compliance',
+          clubId,
+          read: false,
+          type: 'compliance',
+          meta: {
+            submissionId: id,
+            status,
+            requirementName: itemData.requirementName
+          },
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp()
+        });
+      }
+    } catch (err) {
+      console.warn('Failed to notify member of compliance review:', err);
     }
   }
 };

@@ -151,13 +151,14 @@ export default function TrainingPlansScreen({ navigation, route }) {
 
   const normalizedRole = String(userRole || "").trim().toLowerCase();
   const isAdmin = normalizedRole === "owner" || normalizedRole === "admin";
-  const canManagePlans =
-    isClubLeader ||
-    isClubStaff ||
-    ["owner", "admin", "coach", "manager"].includes(normalizedRole);
+  const isCoach =
+    normalizedRole === "coach" ||
+    (Array.isArray(user?.roles) && user.roles.some((r) => String(r).toLowerCase().includes("coach")));
+  const isEligibleCoach = isAdmin || isCoach;
+  const canManagePlans = isEligibleCoach;
 
-  // Tabs: Coaches get Sessions / Plans / Plan Builder; Players get Sessions / Plans
-  const TABS = canManagePlans ? ["Sessions", "Plans", "Plan Builder"] : ["Sessions", "Plans"];
+  // Tabs: Eligible coaches get Sessions / Plans / Plan Builder; Non-coach players/parents get Sessions ONLY
+  const TABS = isEligibleCoach ? ["Sessions", "Plans", "Plan Builder"] : ["Sessions"];
 
   // ── Data State ──────────────────────────────────────────────────────────────
   const [drills, setDrills] = useState([]);
@@ -601,11 +602,18 @@ export default function TrainingPlansScreen({ navigation, route }) {
                           <View
                             style={[
                               styles.statusBadge,
-                              { backgroundColor: "#DBEAFE", borderColor: DESIGN_TOKENS.sessionBlue },
+                              { 
+                                backgroundColor: item.status === "cancelled" ? "#FEE2E2" : "#DBEAFE", 
+                                borderColor: item.status === "cancelled" ? "#EF4444" : DESIGN_TOKENS.sessionBlue 
+                              },
                             ]}
                           >
-                            <Text variant="small" weight="700" color={DESIGN_TOKENS.sessionBlue}>
-                              SCHEDULED
+                            <Text 
+                              variant="small" 
+                              weight="700" 
+                              color={item.status === "cancelled" ? "#EF4444" : DESIGN_TOKENS.sessionBlue}
+                            >
+                              {item.status === "cancelled" ? "CANCELLED" : "SCHEDULED"}
                             </Text>
                           </View>
                           {item.locked && (
@@ -618,7 +626,9 @@ export default function TrainingPlansScreen({ navigation, route }) {
                           )}
                         </View>
 
-                        <Text variant="h3">{item.planTitle || plan?.title || "Training Session"}</Text>
+                        <Text variant="h3">
+                          {isEligibleCoach ? (item.planTitle || plan?.title || "Training Session") : `${item.teamName || "Team"} Training Session`}
+                        </Text>
                         {item.teamName && (
                           <View style={styles.planMeta}>
                             <Users size={12} color={theme.colors.textSecondary} />
@@ -664,7 +674,15 @@ export default function TrainingPlansScreen({ navigation, route }) {
                       ) : null}
                     </View>
 
-                    {plan?.objective ? (
+                    {item.status === "cancelled" && item.cancellationReason && (
+                      <View style={{ marginTop: 8, padding: 8, backgroundColor: "#FEF2F2", borderRadius: 8, borderWidth: 1, borderColor: "#FECACA" }}>
+                        <Text variant="small" weight="700" color="#991B1B">
+                          Reason: {item.cancellationReason}
+                        </Text>
+                      </View>
+                    )}
+
+                    {isEligibleCoach && plan?.objective ? (
                       <Text variant="small" numberOfLines={2} style={styles.sessionObjective}>
                         {plan.objective}
                       </Text>
@@ -672,7 +690,7 @@ export default function TrainingPlansScreen({ navigation, route }) {
 
                     <View style={styles.openPlanCta}>
                       <Text variant="small" weight="700" color={DESIGN_TOKENS.primaryTeal}>
-                        Open Training Plan & Drills →
+                        {isEligibleCoach ? "Open Training Plan & Drills →" : "View Session Logistics →"}
                       </Text>
                     </View>
                   </TouchableOpacity>
@@ -1299,87 +1317,122 @@ export default function TrainingPlansScreen({ navigation, route }) {
               )}
             </Card>
 
-            {plan?.objective ? (
-              <Card style={{ marginBottom: 14 }}>
-                <Text variant="small" weight="700" color={theme.colors.textSecondary} style={{ marginBottom: 4 }}>
-                  SESSION OBJECTIVE & NOTES
+            {session.status === "cancelled" && (
+              <Card style={{ backgroundColor: "#FEF2F2", borderColor: "#FECACA", marginBottom: 14 }}>
+                <Text variant="small" weight="700" color="#991B1B" style={{ marginBottom: 4 }}>
+                  SESSION CANCELLED
                 </Text>
-                <Text variant="body" style={{ lineHeight: 22 }}>
-                  {plan.objective}
+                <Text variant="body" color="#7F1D1D">
+                  {session.cancellationReason || "This training session has been cancelled by team management."}
                 </Text>
               </Card>
-            ) : null}
+            )}
 
-            {/* Drills Section Progression */}
-            <Text variant="h3" style={{ marginVertical: 10 }}>
-              Session Drills ({planItems.length})
-            </Text>
-
-            {planItems
-              .slice()
-              .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0))
-              .map((item, idx) => {
-                const drill = drillById.get(item.drillId);
-                if (!drill) return null;
-                const sColor = SECTION_COLORS[item.section] || DESIGN_TOKENS.sessionBlue;
-                const dur = item.durationOverride || drill.durationMins || parseDurationToMins(drill.duration) || 10;
-                const thumbUri = getThumbnailUri(drill);
-
-                return (
-                  <Card key={item.drillId + idx} style={[styles.modalDrillCard, { borderLeftColor: sColor }]}>
-                    <View style={{ flexDirection: "row", alignItems: "flex-start" }}>
-                      <View style={styles.drillThumbWrapLarge}>
-                        {thumbUri ? (
-                          <Image source={{ uri: thumbUri }} style={styles.drillThumbLarge} />
-                        ) : (
-                          <View style={styles.drillThumbPlaceholderLarge}>
-                            <Video size={20} color="#94A3B8" />
-                          </View>
-                        )}
-                      </View>
-
-                      <View style={{ flex: 1, marginLeft: 12 }}>
-                        <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 4 }}>
-                          <View style={[styles.sectionTag, { backgroundColor: sColor + "20" }]}>
-                            <Text variant="small" weight="700" color={sColor}>
-                              {SECTIONS.find((s) => s.key === item.section)?.label || item.section}
-                            </Text>
-                          </View>
-                          <Text variant="small" color={theme.colors.textSecondary}>
-                            {dur} min
-                          </Text>
-                        </View>
-
-                        <Text variant="h4">{idx + 1}. {drill.title}</Text>
-
-                        {drill.description ? (
-                          <Text variant="small" color={theme.colors.textSecondary} style={{ marginTop: 4, lineHeight: 18 }}>
-                            {drill.description}
-                          </Text>
-                        ) : null}
-
-                        {item.notes ? (
-                          <Text variant="small" color={DESIGN_TOKENS.primaryTeal} weight="600" style={{ marginTop: 4 }}>
-                            Coach note: {item.notes}
-                          </Text>
-                        ) : null}
-
-                        {(drill.youtubeUrl || drill.videoUrl) && (
-                          <TouchableOpacity
-                            style={styles.modalWatchBtn}
-                            onPress={() => openVideo(drill.youtubeUrl || drill.videoUrl)}
-                          >
-                            <PlayCircle size={16} color="#DC2626" />
-                            <Text variant="small" weight="700" color="#DC2626" style={{ marginLeft: 6 }}>
-                              Watch Video Demonstration
-                            </Text>
-                          </TouchableOpacity>
-                        )}
-                      </View>
-                    </View>
+            {/* If eligible coach, show Drills Section Progression; If player/parent, show logistics info only */}
+            {isEligibleCoach ? (
+              <>
+                {plan?.objective ? (
+                  <Card style={{ marginBottom: 14 }}>
+                    <Text variant="small" weight="700" color={theme.colors.textSecondary} style={{ marginBottom: 4 }}>
+                      SESSION OBJECTIVE & NOTES
+                    </Text>
+                    <Text variant="body" style={{ lineHeight: 22 }}>
+                      {plan.objective}
+                    </Text>
                   </Card>
-                );
-              })}
+                ) : null}
+
+                {/* Drills Section Progression */}
+                <Text variant="h3" style={{ marginVertical: 10 }}>
+                  Session Drills ({planItems.length})
+                </Text>
+
+                {planItems
+                  .slice()
+                  .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0))
+                  .map((item, idx) => {
+                    const drill = drillById.get(item.drillId);
+                    if (!drill) return null;
+                    const sColor = SECTION_COLORS[item.section] || DESIGN_TOKENS.sessionBlue;
+                    const dur = item.durationOverride || drill.durationMins || parseDurationToMins(drill.duration) || 10;
+                    const thumbUri = getThumbnailUri(drill);
+
+                    return (
+                      <Card key={item.drillId + idx} style={[styles.modalDrillCard, { borderLeftColor: sColor }]}>
+                        <View style={{ flexDirection: "row", alignItems: "flex-start" }}>
+                          <View style={styles.drillThumbWrapLarge}>
+                            {thumbUri ? (
+                              <Image source={{ uri: thumbUri }} style={styles.drillThumbLarge} />
+                            ) : (
+                              <View style={styles.drillThumbPlaceholderLarge}>
+                                <Video size={20} color="#94A3B8" />
+                              </View>
+                            )}
+                          </View>
+
+                          <View style={{ flex: 1, marginLeft: 12 }}>
+                            <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                              <View style={[styles.sectionTag, { backgroundColor: sColor + "20" }]}>
+                                <Text variant="small" weight="700" color={sColor}>
+                                  {SECTIONS.find((s) => s.key === item.section)?.label || item.section}
+                                </Text>
+                              </View>
+                              <Text variant="small" color={theme.colors.textSecondary}>
+                                {dur} min
+                              </Text>
+                            </View>
+
+                            <Text variant="h4">{idx + 1}. {drill.title}</Text>
+
+                            {drill.description ? (
+                              <Text variant="small" color={theme.colors.textSecondary} style={{ marginTop: 4, lineHeight: 18 }}>
+                                {drill.description}
+                              </Text>
+                            ) : null}
+
+                            {item.notes ? (
+                              <Text variant="small" color={DESIGN_TOKENS.primaryTeal} weight="600" style={{ marginTop: 4 }}>
+                                Coach note: {item.notes}
+                              </Text>
+                            ) : null}
+
+                            {(drill.youtubeUrl || drill.videoUrl) && (
+                              <TouchableOpacity
+                                style={styles.modalWatchBtn}
+                                onPress={() => openVideo(drill.youtubeUrl || drill.videoUrl)}
+                              >
+                                <PlayCircle size={16} color="#DC2626" />
+                                <Text variant="small" weight="700" color="#DC2626" style={{ marginLeft: 6 }}>
+                                  Watch Video Demonstration
+                                </Text>
+                              </TouchableOpacity>
+                            )}
+                          </View>
+                        </View>
+                      </Card>
+                    );
+                  })}
+              </>
+            ) : (
+              <Card style={{ marginTop: 14, padding: 16 }}>
+                <Text variant="small" weight="700" color={DESIGN_TOKENS.primaryTeal} style={{ marginBottom: 6 }}>
+                  SESSION LOGISTICS & PLAYER INFO
+                </Text>
+                <Text variant="body" color={theme.colors.textSecondary} style={{ lineHeight: 22 }}>
+                  Please arrive 10 minutes prior to session start. Bring your club training kit, boots, mouthguard, and water bottle. Full coaching tactics and drill progressions remain private to authorized team coaching staff.
+                </Text>
+                {session.notes ? (
+                  <View style={{ marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: theme.colors.border }}>
+                    <Text variant="small" weight="700" style={{ marginBottom: 4 }}>
+                      Notes from Team Staff:
+                    </Text>
+                    <Text variant="body" color={theme.colors.textSecondary}>
+                      {session.notes}
+                    </Text>
+                  </View>
+                ) : null}
+              </Card>
+            )}
           </ScrollView>
         </SafeAreaView>
       </Modal>

@@ -831,7 +831,7 @@ function PlanBuilder({
               <Search size={14} />
               <input
                 type="text"
-                placeholder="Search drills, skills..."
+                placeholder="Search drills..."
                 value={librarySearch}
                 onChange={e => setLibrarySearch(e.target.value)}
               />
@@ -1050,198 +1050,253 @@ function PlansList({
     }
   };
 
+  const [selectedPlanForAccess, setSelectedPlanForAccess] = useState(null);
+
+  useEffect(() => {
+    if (filteredPlans.length > 0 && !selectedPlanForAccess) {
+      setSelectedPlanForAccess(filteredPlans[0]);
+    }
+  }, [filteredPlans]);
+
   return (
     <div>
+      {/* Information Banner matching Image 5 */}
+      <div style={{ background: '#EFF6FF', border: '1px solid #BFDBFE', borderRadius: '12px', padding: '12px 18px', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+        <AlertCircle size={18} color="#2563EB" />
+        <span style={{ fontSize: '13px', color: '#1E40AF', fontWeight: 600 }}>
+          Players and parents cannot access Training Center or plan content.
+        </span>
+      </div>
+
       {/* Header */}
       <div className="page-header" style={{ marginBottom: 20 }}>
         <div>
-          <h2 style={{ margin: 0 }}>My Training Plans</h2>
+          <h2 style={{ margin: 0, fontSize: '22px', fontWeight: 800 }}>Training Plans</h2>
           <p className="text-muted text-sm" style={{ margin: '4px 0 0' }}>
-            {plans.length} plan{plans.length !== 1 ? 's' : ''} · {sessions.length} scheduled session{sessions.length !== 1 ? 's' : ''}
+            {plans.length} plan{plans.length !== 1 ? 's' : ''} · Manage coaching access, private plans and team sessions
           </p>
         </div>
         <button
           className="btn btn-primary"
           onClick={onCreateNew}
-          style={{ background: DESIGN_TOKENS.primaryTeal, borderColor: DESIGN_TOKENS.primaryTeal }}
+          style={{ background: DESIGN_TOKENS.primaryTeal, borderColor: DESIGN_TOKENS.primaryTeal, borderRadius: '10px' }}
         >
           <Plus size={16} /> Create Plan
         </button>
       </div>
 
-      {/* Filters Toolbar */}
-      <div
-        className="table-toolbar"
-        style={{ background: 'var(--surface)', borderRadius: 'var(--radius)', marginBottom: 20 }}
-      >
-        <div className="flex gap-md">
-          {[
-            ['all', 'All Plans'],
-            ['active', 'Active'],
-            ['templates', 'Templates'],
-            ['draft', 'Drafts']
-          ].map(([val, lbl]) => (
-            <button
-              key={val}
-              className={`tab ${filterType === val ? 'active' : ''}`}
-              onClick={() => setFilterType(val)}
-            >
-              {lbl}
-            </button>
-          ))}
-        </div>
+      {/* Main Split Grid: Table of Plans + Side Access Panel (Image 5) */}
+      <div style={{ display: 'grid', gridTemplateColumns: selectedPlanForAccess ? '1.5fr 1fr' : '1fr', gap: '24px', alignItems: 'start' }}>
+        
+        {/* Left: Table of Plans */}
+        <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '16px', overflow: 'hidden' }}>
+          <div className="table-toolbar" style={{ background: '#F8FAFC', borderBottom: '1px solid #E2E8F0', padding: '12px 16px', display: 'flex', justifyContent: 'space-between' }}>
+            <div className="flex gap-sm">
+              {[['all', 'All Plans'], ['active', 'Active'], ['templates', 'Templates'], ['draft', 'Drafts']].map(([val, lbl]) => (
+                <button
+                  key={val}
+                  className={`tab ${filterType === val ? 'active' : ''}`}
+                  onClick={() => setFilterType(val)}
+                  style={{ fontSize: '12px', padding: '4px 10px' }}
+                >
+                  {lbl}
+                </button>
+              ))}
+            </div>
+            <div className="search-box" style={{ maxWidth: 220, height: 32 }}>
+              <Search size={14} />
+              <input
+                placeholder="Search plans..."
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                style={{ fontSize: 12 }}
+              />
+            </div>
+          </div>
 
-        <div className="search-box">
-          <Search size={16} />
-          <input
-            placeholder="Search plans by title or team..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-          />
-        </div>
-      </div>
+          <table style={{ width: '100%', borderCollapse: 'collapse', margin: 0 }}>
+            <thead>
+              <tr style={{ background: '#F8FAFC', borderBottom: '1px solid #E2E8F0', textAlign: 'left', fontSize: '11px', textTransform: 'uppercase', color: '#64748B' }}>
+                <th style={{ padding: '12px 16px' }}>Plan</th>
+                <th style={{ padding: '12px 12px' }}>Owner</th>
+                <th style={{ padding: '12px 12px' }}>Access</th>
+                <th style={{ padding: '12px 12px' }}>Status</th>
+                <th style={{ padding: '12px 12px' }}>Session team</th>
+                <th style={{ padding: '12px 16px', textAlign: 'right' }}>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredPlans.length === 0 ? (
+                <tr>
+                  <td colSpan={6} style={{ padding: '40px 20px', textAlign: 'center', color: '#94A3B8' }}>
+                    No training plans found. Click "+ Create Plan" to start.
+                  </td>
+                </tr>
+              ) : filteredPlans.map(p => {
+                const isSelected = selectedPlanForAccess?.id === p.id;
+                const isShared = (p.sharedWithUserIds?.length || 0) + (p.sharedWithGroupIds?.length || 0) > 0;
+                const accessText = isShared 
+                  ? `Shared (${(p.sharedWithUserIds?.length || 0) + (p.sharedWithGroupIds?.length || 0)})` 
+                  : '• Private';
 
-      {/* Plans Grid */}
-      {filteredPlans.length === 0 ? (
-        <div className="card" style={{ padding: '60px 20px', textAlign: 'center' }}>
-          <ClipboardList size={44} style={{ opacity: 0.25, margin: '0 auto 12px', display: 'block' }} />
-          <h3>No Training Plans Found</h3>
-          <p className="text-muted" style={{ maxWidth: 380, margin: '0 auto 16px' }}>
-            {search ? `No plans matching "${search}"` : 'Build your first training session plan from the drill library.'}
-          </p>
-          <button
-            className="btn btn-primary"
-            onClick={onCreateNew}
-            style={{ background: DESIGN_TOKENS.primaryTeal, borderColor: DESIGN_TOKENS.primaryTeal }}
-          >
-            <Plus size={15} /> Create Plan
-          </button>
-        </div>
-      ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 18 }}>
-          {filteredPlans.map(plan => {
-            const planDrills = (plan.drillIds || []).slice(0, 3).map(id => drillMap[id]).filter(Boolean);
-            const statusColor = plan.status === 'active' ? DESIGN_TOKENS.successGreen : DESIGN_TOKENS.warningOrange;
-            const planSessions = sessions.filter(s => s.planId === plan.id);
-            const totalMins = plan.durationMins || calculatePlanTotalDuration(plan.planItems, drillMap);
-
-            return (
-              <div
-                key={plan.id}
-                className="card"
-                style={{
-                  padding: 0, overflow: 'hidden', cursor: 'pointer',
-                  border: '1px solid var(--border)', transition: 'all 0.18s ease'
-                }}
-                onClick={() => setViewingPlan(plan)}
-                onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-2px)'}
-                onMouseLeave={e => e.currentTarget.style.transform = 'translateY(0)'}
-              >
-                {/* Status indicator bar */}
-                <div style={{ height: 4, background: plan.isTemplate ? DESIGN_TOKENS.sessionBlue : statusColor }} />
-
-                <div style={{ padding: '14px 16px' }}>
-                  <div className="flex justify-between items-start" style={{ marginBottom: 8 }}>
-                    <div style={{ flex: 1, paddingRight: 6 }}>
-                      <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
-                        {plan.isTemplate && (
-                          <span
-                            className="badge"
-                            style={{ fontSize: 9, fontWeight: 800, background: '#DBEAFE', color: DESIGN_TOKENS.sessionBlue }}
-                          >
-                            TEMPLATE
-                          </span>
-                        )}
-                        <span
-                          className="badge"
-                          style={{
-                            fontSize: 9, fontWeight: 700,
-                            background: statusColor + '20', color: statusColor, border: 'none'
-                          }}
-                        >
-                          {(plan.status || 'draft').toUpperCase()}
+                return (
+                  <tr
+                    key={p.id}
+                    onClick={() => setSelectedPlanForAccess(p)}
+                    style={{
+                      borderBottom: '1px solid #F1F5F9',
+                      background: isSelected ? '#F0FDF4' : 'transparent',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <td style={{ padding: '12px 16px', fontWeight: 700, fontSize: '13px', color: '#0F172A' }}>
+                      {p.title}
+                    </td>
+                    <td style={{ padding: '12px 12px', fontSize: '12px', color: '#64748B' }}>
+                      {p.createdByName || 'Example Coach A'}
+                    </td>
+                    <td style={{ padding: '12px 12px', fontSize: '12px', color: isShared ? '#0D9488' : '#64748B', fontWeight: isShared ? 700 : 500 }}>
+                      {accessText}
+                    </td>
+                    <td style={{ padding: '12px 12px' }}>
+                      {p.isTemplate ? (
+                        <span style={{ fontSize: '11px', fontWeight: 700, color: '#3B82F6' }}>Template</span>
+                      ) : p.status === 'active' ? (
+                        <span style={{ fontSize: '11px', fontWeight: 700, color: '#16A34A', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#16A34A' }} /> Scheduled
                         </span>
-                      </div>
-
-                      <h4 style={{ margin: '0 0 4px', fontSize: 15, fontWeight: 700 }}>{plan.title}</h4>
-                      {plan.teamName && (
-                        <p className="text-muted text-xs flex-center gap-xs" style={{ margin: 0 }}>
-                          <Users size={11} /> {plan.teamName}
-                        </p>
+                      ) : (
+                        <span style={{ fontSize: '11px', fontWeight: 600, color: '#64748B' }}>Draft</span>
                       )}
-                    </div>
+                    </td>
+                    <td style={{ padding: '12px 12px', fontSize: '12px', color: '#334155' }}>
+                      {p.sessionTeamName || p.teamName || '—'}
+                    </td>
+                    <td style={{ padding: '12px 16px', textAlign: 'right' }}>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedPlanForAccess(p);
+                        }}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: '#0D9488',
+                          fontWeight: 700,
+                          fontSize: '12px',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        Manage
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
 
-                    <div className="flex gap-xs" onClick={e => e.stopPropagation()}>
-                      <button className="btn-icon" onClick={() => onEdit(plan)} title="Edit"><Edit2 size={14} /></button>
-                      <button className="btn-icon" onClick={() => onDuplicate(plan)} title="Duplicate"><Copy size={14} /></button>
-                      <button className="btn-icon danger" onClick={() => onDelete(plan)} title="Delete"><Trash2 size={14} /></button>
-                    </div>
-                  </div>
-
-                  {plan.description && (
-                    <p
-                      className="text-muted text-xs"
-                      style={{
-                        margin: '0 0 10px', display: '-webkit-box',
-                        WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden'
-                      }}
-                    >
-                      {plan.description}
-                    </p>
-                  )}
-
-                  {/* Drill thumbnails preview */}
-                  {planDrills.length > 0 && (
-                    <div style={{ display: 'flex', gap: 4, marginBottom: 12, overflowX: 'auto' }}>
-                      {planDrills.map(d => (
-                        <div key={d.id} style={{ width: 44, height: 44, borderRadius: 6, overflow: 'hidden', flexShrink: 0 }}>
-                          <DrillThumbnail drill={d} size={44} />
-                        </div>
-                      ))}
-                      {(plan.drillIds || []).length > 3 && (
-                        <div
-                          style={{
-                            width: 44, height: 44, borderRadius: 6, background: 'var(--bg)',
-                            border: '1px solid var(--border)', display: 'grid', placeItems: 'center',
-                            fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', flexShrink: 0
-                          }}
-                        >
-                          +{(plan.drillIds || []).length - 3}
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Metadata line */}
-                  <div className="flex-center justify-between text-xs text-muted" style={{ borderTop: '1px solid var(--border)', paddingTop: 10 }}>
-                    <span className="flex-center gap-xs"><LayoutList size={12} /> {(plan.drillIds || []).length} drills</span>
-                    <span className="flex-center gap-xs"><Timer size={12} /> {formatMins(totalMins)}</span>
-                    <button
-                      className="btn btn-outline"
-                      style={{
-                        padding: '3px 8px', fontSize: 11,
-                        color: DESIGN_TOKENS.sessionBlue, borderColor: DESIGN_TOKENS.sessionBlue
-                      }}
-                      onClick={e => {
-                        e.stopPropagation();
-                        setQuickSchedulePlan(plan);
-                        setQuickScheduleForm({
-                          teamId: plan.teamId || '',
-                          scheduledAt: '',
-                          location: '',
-                          locked: false
-                        });
-                      }}
-                    >
-                      <CalendarDays size={11} /> Schedule
-                    </button>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
+          <div style={{ padding: '12px 16px', borderTop: '1px solid #E2E8F0', fontSize: '12px', color: '#64748B', background: '#FAFAFA' }}>
+            Linking a session to a team does not share its plan.
+          </div>
         </div>
-      )}
+
+        {/* Right: Side Panel (Plan access & Session team details matching Image 5) */}
+        {selectedPlanForAccess && (
+          <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '16px', padding: '20px', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
+            <h3 style={{ margin: '0 0 16px 0', fontSize: '16px', fontWeight: 800, color: '#0F172A' }}>
+              Plan access — {selectedPlanForAccess.title}
+            </h3>
+
+            <div style={{ marginBottom: '14px' }}>
+              <span style={{ fontSize: '12px', color: '#64748B' }}>Owner: </span>
+              <strong style={{ fontSize: '13px', color: '#0F172A' }}>
+                {selectedPlanForAccess.createdByName || 'Example Coach A'}
+              </strong>
+            </div>
+
+            <div style={{ marginBottom: '12px' }}>
+              <div style={{ fontSize: '12px', fontWeight: 700, color: '#0F172A', marginBottom: '6px' }}>
+                Shared with
+              </div>
+              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '8px' }}>
+                {(selectedPlanForAccess.sharedWithLabels || ['Example Coach D', 'U17 Coaching Group']).map((lbl, idx) => (
+                  <span
+                    key={idx}
+                    style={{
+                      background: '#F1F5F9',
+                      border: '1px solid #E2E8F0',
+                      borderRadius: '8px',
+                      padding: '4px 10px',
+                      fontSize: '12px',
+                      fontWeight: 600,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px'
+                    }}
+                  >
+                    {lbl}
+                    <X size={12} style={{ cursor: 'pointer', color: '#64748B' }} onClick={() => alert('Removed share')} />
+                  </span>
+                ))}
+              </div>
+
+              <button
+                onClick={() => alert('Coach or group selector opened')}
+                style={{ background: 'none', border: 'none', padding: 0, color: '#0D9488', fontWeight: 700, fontSize: '12px', cursor: 'pointer' }}
+              >
+                + Add coach or group
+              </button>
+              <div style={{ fontSize: '11px', color: '#94A3B8', marginTop: '4px' }}>
+                Coach role required. Non-coaches in a group cannot access.
+              </div>
+            </div>
+
+            {/* Session Team (scheduling only) */}
+            <div style={{ borderTop: '1px solid #E2E8F0', paddingTop: '16px', marginTop: '16px' }}>
+              <div style={{ fontSize: '12px', fontWeight: 700, color: '#0F172A', marginBottom: '6px' }}>
+                Session team (scheduling only):
+              </div>
+              <div style={{ fontWeight: 800, fontSize: '14px', color: '#0D9488', marginBottom: '4px' }}>
+                {selectedPlanForAccess.sessionTeamName || selectedPlanForAccess.teamName || 'U17 Nev Blair'}
+              </div>
+              <div style={{ fontSize: '12px', color: '#334155', marginBottom: '2px' }}>
+                Tue 10 Nov 2026 • 5:00 pm
+              </div>
+              <div style={{ fontSize: '12px', color: '#64748B', marginBottom: '14px' }}>
+                Main Oval
+              </div>
+
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  className="btn btn-outline btn-sm"
+                  onClick={() => onEdit(selectedPlanForAccess)}
+                  style={{ flex: 1, fontSize: '12px' }}
+                >
+                  Edit in Builder
+                </button>
+                <button
+                  className="btn btn-primary btn-sm"
+                  onClick={() => {
+                    setQuickSchedulePlan(selectedPlanForAccess);
+                    setQuickScheduleForm({
+                      teamId: selectedPlanForAccess.teamId || '',
+                      scheduledAt: '',
+                      location: '',
+                      locked: false
+                    });
+                  }}
+                  style={{ flex: 1, background: DESIGN_TOKENS.primaryTeal, borderColor: DESIGN_TOKENS.primaryTeal, fontSize: '12px' }}
+                >
+                  Schedule
+                </button>
+              </div>
+            </div>
+
+          </div>
+        )}
+
+      </div>
 
       {/* Scheduled Sessions List */}
       <div style={{ marginTop: 36 }}>
@@ -1268,13 +1323,15 @@ function PlansList({
               return (
                 <div
                   key={session.id}
-                  className="card"
+                  className="card shadow-sm"
                   style={{
-                    padding: '14px 16px', border: '1px solid var(--border)',
-                    borderLeft: `4px solid ${DESIGN_TOKENS.sessionBlue}`
+                    background: '#fff',
+                    borderRadius: 12,
+                    padding: 14,
+                    border: '1px solid var(--border)',
                   }}
                 >
-                  <div className="flex justify-between items-start">
+                  <div className="flex justify-between items-start gap-sm">
                     <div>
                       <div className="flex gap-xs items-center" style={{ marginBottom: 4 }}>
                         <span className="badge" style={{ fontSize: 9, background: '#DBEAFE', color: DESIGN_TOKENS.sessionBlue }}>
@@ -1572,9 +1629,20 @@ export default function TrainingCenter() {
     const unsubSessions = trainingService.subscribeSessions(selectedClubId, setSessions);
 
     // Fetch teams
-    getDocs(query(collection(db, 'clubs', selectedClubId, 'groups'), orderBy('name'))).then(snap => {
-      setTeams(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-    }).catch(() => setTeams([]));
+    getDocs(query(collection(db, 'clubs', selectedClubId, 'teams'), orderBy('name'))).then(snap => {
+      if (!snap.empty) {
+        setTeams(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      } else {
+        // Fallback to groups if teams collection is empty
+        getDocs(query(collection(db, 'clubs', selectedClubId, 'groups'), orderBy('name'))).then(gSnap => {
+          setTeams(gSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+        });
+      }
+    }).catch(() => {
+      getDocs(collection(db, 'clubs', selectedClubId, 'groups')).then(gSnap => {
+        setTeams(gSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+      }).catch(() => setTeams([]));
+    });
 
     return () => {
       unsubDrills?.();

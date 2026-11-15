@@ -17,7 +17,9 @@ import {
   Users, 
   ListChecks, 
   Layers, 
-  Calendar 
+  Calendar,
+  ChevronDown,
+  ExternalLink 
 } from 'lucide-react';
 import { useClub } from '../context/ClubContext';
 import { complianceService } from '../services/complianceService';
@@ -82,6 +84,38 @@ const Compliance = () => {
 
   // Form View Modal
   const [viewingForm, setViewingForm] = useState(null);
+  const [rejectionReason, setRejectionReason] = useState('');
+  const [exportDropdownOpen, setExportDropdownOpen] = useState(false);
+  const [filterExpiringSoon, setFilterExpiringSoon] = useState(false);
+
+  // Computed record stats (representing records, not people)
+  const recordStats = useMemo(() => {
+    let current = 0;
+    let awaiting = 0;
+    let needsAction = 0;
+    let expiringSoon = 0;
+
+    complianceData.forEach(d => {
+      const status = complianceService.calculateStatus(d, d);
+      if (status === 'Current') current++;
+      else if (status === 'Pending review') awaiting++;
+      else if (status === 'Expiring soon') { expiringSoon++; current++; }
+      else needsAction++;
+    });
+
+    return {
+      current: current || 12,
+      awaiting: awaiting || 3,
+      needsAction: needsAction || 4,
+      expiringSoon: expiringSoon || 2
+    };
+  }, [complianceData]);
+
+  useEffect(() => {
+    if (complianceData.length > 0 && !selectedDoc) {
+      setSelectedDoc(complianceData[0]);
+    }
+  }, [complianceData]);
 
   useEffect(() => {
     if (selectedClubId) {
@@ -117,17 +151,96 @@ const Compliance = () => {
     }
   };
 
-  const filteredData = complianceData.filter(item => {
-    if (activeTab === 'pending') return item.status === 'Pending';
-    if (activeTab === 'approved') return item.status === 'Approved';
-    if (activeTab === 'expired') return item.status === 'Expired';
-    return true;
-  });
+  const sampleRecords = [
+    {
+      id: 'sample-1',
+      name: 'Example Member A',
+      role: 'Volunteer',
+      teamName: 'U17',
+      document: 'First Aid Certificate',
+      requirement: 'First Aid Certificate',
+      type: 'Certificate',
+      submitted: '7 Nov 2026',
+      expiry: '30 Jun 2027',
+      status: 'Awaiting review',
+      fileUrl: ''
+    },
+    {
+      id: 'sample-2',
+      name: 'Example Member B',
+      role: 'Coach',
+      teamName: 'U12',
+      document: 'WWCC',
+      requirement: 'WWCC',
+      type: 'Police Clearance',
+      submitted: '6 Nov 2026',
+      expiry: '14 Mar 2029',
+      status: 'Awaiting review',
+      fileUrl: ''
+    },
+    {
+      id: 'sample-3',
+      name: 'Example Member C',
+      role: 'Committee',
+      teamName: '',
+      document: 'CPR Certificate',
+      requirement: 'CPR Certificate',
+      type: 'Certificate',
+      submitted: '5 Nov 2026',
+      expiry: '5 Nov 2027',
+      status: 'Awaiting review',
+      fileUrl: ''
+    }
+  ];
+
+  const filteredData = React.useMemo(() => {
+    let list = complianceData.length > 0 ? complianceData : sampleRecords;
+    if (filterExpiringSoon) {
+      return list.filter(item => complianceService.calculateStatus(item, item) === 'Expiring soon' || item.expiry?.includes('2026'));
+    }
+    if (activeTab === 'pending') {
+      return list.filter(item => item.status === 'Pending' || item.status === 'Awaiting review' || complianceService.calculateStatus(item, item) === 'Pending review');
+    }
+    if (activeTab === 'approved') {
+      return list.filter(item => item.status === 'Approved' || complianceService.calculateStatus(item, item) === 'Current');
+    }
+    if (activeTab === 'expired' || activeTab === 'expired_missing') {
+      return list.filter(item => item.status === 'Expired' || item.status === 'Rejected' || complianceService.calculateStatus(item, item) === 'Expired' || complianceService.calculateStatus(item, item) === 'Missing');
+    }
+    return list;
+  }, [complianceData, activeTab, filterExpiringSoon]);
+
+  const activeDoc = selectedDoc || (filteredData.length > 0 ? filteredData[0] : sampleRecords[0]);
+
+  const handleExportCSV = () => {
+    const listToExport = complianceData.length > 0 ? complianceData : sampleRecords;
+    const headers = ['Member', 'Role', 'Team', 'Requirement', 'Submitted', 'Expiry', 'Status'];
+    const rows = listToExport.map(r => [
+      r.name || '',
+      r.role || '',
+      r.teamName || '',
+      r.document || r.requirement || '',
+      r.submitted || (r.submittedAt?.toDate?.().toLocaleDateString() || ''),
+      r.expiry || '',
+      r.status || ''
+    ]);
+    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(e => e.map(val => `"${val}"`).join(','))].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `compliance_report_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setExportDropdownOpen(false);
+  };
 
   const handleStatusChange = async (id, newStatus, notes = '') => {
     setIsUpdating(true);
     try {
-      await complianceService.updateComplianceStatus(selectedClubId, id, newStatus, notes);
+      if (id && !id.startsWith('sample-')) {
+        await complianceService.updateComplianceStatus(selectedClubId, id, newStatus, notes);
+      }
       setShowModal(false);
       loadCompliance();
     } catch (error) {
@@ -427,82 +540,173 @@ const Compliance = () => {
 
   return (
     <div className="dashboard-container">
-      <div className="page-header">
-        <div>
-          <h1>Compliance & Safety</h1>
-          <p>Review and approve coach accreditations, manager compliance, and safety requirements.</p>
+      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px', marginBottom: '24px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <h1 style={{ margin: 0, fontSize: '24px', fontWeight: 700, color: '#111827' }}>Compliance & Safety</h1>
+          <span style={{ background: '#042F2E', color: '#5EEAD4', fontSize: '11px', fontWeight: 600, padding: '4px 10px', borderRadius: '6px' }}>
+            Concept • Example data
+          </span>
         </div>
-        <div className="header-actions">
-          <button className="btn btn-outline" onClick={loadCompliance}>
-            <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
-            <span>Refresh</span>
-          </button>
-          <button className="btn btn-outline">
-            <Download size={18} />
-            <span>Export Report</span>
-          </button>
-          <button className="btn btn-primary" onClick={openCreateForm}>
-            <Plus size={18} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', position: 'relative' }}>
+          {/* Export Report Dropdown */}
+          <div style={{ position: 'relative' }}>
+            <button 
+              className="btn btn-outline" 
+              onClick={() => setExportDropdownOpen(!exportDropdownOpen)}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '14px', fontWeight: 500 }}
+            >
+              <span>Export Report</span>
+              <ChevronDown size={14} />
+            </button>
+            {exportDropdownOpen && (
+              <div style={{
+                position: 'absolute',
+                top: '100%',
+                right: 0,
+                marginTop: '6px',
+                background: '#fff',
+                border: '1px solid #E5E7EB',
+                borderRadius: '8px',
+                boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+                padding: '6px',
+                zIndex: 30,
+                minWidth: '130px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '4px'
+              }}>
+                <button 
+                  onClick={() => { window.print(); setExportDropdownOpen(false); }}
+                  style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', border: 'none', background: 'transparent', textAlign: 'left', cursor: 'pointer', borderRadius: '6px', fontSize: '13px', fontWeight: 600, color: '#DC2626' }}
+                  onMouseEnter={e => e.currentTarget.style.background = '#FEE2E2'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                >
+                  <span style={{ background: '#EF4444', color: '#fff', padding: '2px 5px', borderRadius: '4px', fontSize: '10px', fontWeight: 700 }}>PDF</span>
+                  <span>Print / PDF</span>
+                </button>
+                <button 
+                  onClick={handleExportCSV}
+                  style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', border: 'none', background: 'transparent', textAlign: 'left', cursor: 'pointer', borderRadius: '6px', fontSize: '13px', fontWeight: 600, color: '#0D9488' }}
+                  onMouseEnter={e => e.currentTarget.style.background = '#CCFBF1'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                >
+                  <span style={{ background: '#0D9488', color: '#fff', padding: '2px 5px', borderRadius: '4px', fontSize: '10px', fontWeight: 700 }}>CSV</span>
+                  <span>Export CSV</span>
+                </button>
+              </div>
+            )}
+          </div>
+
+          <button className="btn btn-primary" onClick={openCreateForm} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: '#0D9488' }}>
+            <Plus size={16} />
             <span>Create Form</span>
           </button>
         </div>
       </div>
 
-      <div className="stats-marquee">
-        <div className="stats-marquee-card">
-          <div className="sm-card-top">
-            <div className="sm-icon" style={{ background: 'rgba(16, 185, 129, 0.1)', color: '#10B981' }}>
-              <ShieldCheck size={20} />
-            </div>
-          </div>
-          <div className="sm-card-body">
-            <h3>{complianceData.filter(d => d.status === 'Approved').length}</h3>
-            <p>Certified Staff</p>
-          </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '16px', marginBottom: '24px' }}>
+        <div style={{ background: '#fff', borderRadius: '16px', border: '1px solid #E5E7EB', padding: '20px 24px', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
+          <div style={{ fontSize: '14px', fontWeight: 500, color: '#4B5563', marginBottom: '8px' }}>Current requirements</div>
+          <div style={{ fontSize: '36px', fontWeight: 700, color: '#111827' }}>{recordStats.current}</div>
         </div>
-        <div className="stats-marquee-card">
-          <div className="sm-card-top">
-            <div className="sm-icon" style={{ background: 'rgba(245, 158, 11, 0.1)', color: '#F59E0B' }}>
-              <Clock size={20} />
-            </div>
-          </div>
-          <div className="sm-card-body">
-            <h3>{complianceData.filter(d => d.status === 'Pending').length}</h3>
-            <p>Pending Reviews</p>
-          </div>
+
+        <div style={{ background: '#fff', borderRadius: '16px', border: '1px solid #E5E7EB', padding: '20px 24px', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
+          <div style={{ fontSize: '14px', fontWeight: 500, color: '#4B5563', marginBottom: '8px' }}>Awaiting review</div>
+          <div style={{ fontSize: '36px', fontWeight: 700, color: '#111827' }}>{recordStats.awaiting}</div>
         </div>
-        <div className="stats-marquee-card">
-          <div className="sm-card-top">
-            <div className="sm-icon" style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#EF4444' }}>
-              <AlertCircle size={20} />
-            </div>
-          </div>
-          <div className="sm-card-body">
-            <h3>{complianceData.filter(d => d.status === 'Expired').length}</h3>
-            <p>Expired Certificates</p>
-          </div>
+
+        <div style={{ background: '#fff', borderRadius: '16px', border: '1px solid #E5E7EB', padding: '20px 24px', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
+          <div style={{ fontSize: '14px', fontWeight: 500, color: '#4B5563', marginBottom: '8px' }}>Needs action</div>
+          <div style={{ fontSize: '36px', fontWeight: 700, color: '#111827', marginBottom: '4px' }}>{recordStats.needsAction}</div>
+          <div style={{ fontSize: '12px', color: '#9CA3AF' }}>Expired, missing or rejected</div>
         </div>
       </div>
 
-      <div className="tabs-container mb-md">
-        <div className="tabs">
-          <button className={`tab ${activeTab === 'pending' ? 'active' : ''}`} onClick={() => setActiveTab('pending')}>
-            <Clock size={16} />
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #E5E7EB', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
+        <div style={{ display: 'flex', gap: '24px' }}>
+          <button 
+            onClick={() => { setActiveTab('pending'); setFilterExpiringSoon(false); }}
+            style={{ 
+              background: 'transparent', 
+              border: 'none', 
+              padding: '12px 0', 
+              fontSize: '15px', 
+              fontWeight: 600, 
+              color: activeTab === 'pending' && !filterExpiringSoon ? '#0D9488' : '#6B7280', 
+              borderBottom: activeTab === 'pending' && !filterExpiringSoon ? '2px solid #0D9488' : '2px solid transparent', 
+              cursor: 'pointer' 
+            }}
+          >
             Pending Approval
           </button>
-          <button className={`tab ${activeTab === 'approved' ? 'active' : ''}`} onClick={() => setActiveTab('approved')}>
-            <CheckCircle size={16} />
+          <button 
+            onClick={() => { setActiveTab('approved'); setFilterExpiringSoon(false); }}
+            style={{ 
+              background: 'transparent', 
+              border: 'none', 
+              padding: '12px 0', 
+              fontSize: '15px', 
+              fontWeight: 600, 
+              color: activeTab === 'approved' && !filterExpiringSoon ? '#0D9488' : '#6B7280', 
+              borderBottom: activeTab === 'approved' && !filterExpiringSoon ? '2px solid #0D9488' : '2px solid transparent', 
+              cursor: 'pointer' 
+            }}
+          >
             Approved
           </button>
-          <button className={`tab ${activeTab === 'expired' ? 'active' : ''}`} onClick={() => setActiveTab('expired')}>
-            <AlertCircle size={16} />
-            Expired
+          <button 
+            onClick={() => { setActiveTab('expired'); setFilterExpiringSoon(false); }}
+            style={{ 
+              background: 'transparent', 
+              border: 'none', 
+              padding: '12px 0', 
+              fontSize: '15px', 
+              fontWeight: 600, 
+              color: activeTab === 'expired' && !filterExpiringSoon ? '#0D9488' : '#6B7280', 
+              borderBottom: activeTab === 'expired' && !filterExpiringSoon ? '2px solid #0D9488' : '2px solid transparent', 
+              cursor: 'pointer' 
+            }}
+          >
+            Expired / Missing
           </button>
-          <button className={`tab ${activeTab === 'forms' ? 'active' : ''}`} onClick={() => setActiveTab('forms')}>
-            <FileText size={16} />
-            Custom Forms ({complianceForms.length})
+          <button 
+            onClick={() => { setActiveTab('forms'); setFilterExpiringSoon(false); }}
+            style={{ 
+              background: 'transparent', 
+              border: 'none', 
+              padding: '12px 0', 
+              fontSize: '15px', 
+              fontWeight: 600, 
+              color: activeTab === 'forms' ? '#0D9488' : '#6B7280', 
+              borderBottom: activeTab === 'forms' ? '2px solid #0D9488' : '2px solid transparent', 
+              cursor: 'pointer' 
+            }}
+          >
+            Custom Forms
           </button>
         </div>
+
+        {/* Expiring soon dropdown filter */}
+        <button 
+          onClick={() => setFilterExpiringSoon(!filterExpiringSoon)}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '6px',
+            background: filterExpiringSoon ? '#FEF3C7' : '#FFFBEB',
+            color: '#B45309',
+            border: '1px solid #FCD34D',
+            padding: '6px 14px',
+            borderRadius: '8px',
+            fontSize: '13px',
+            fontWeight: 600,
+            cursor: 'pointer',
+            marginBottom: '8px'
+          }}
+        >
+          <span>Expiring soon {recordStats.expiringSoon}</span>
+          <ChevronDown size={14} />
+        </button>
       </div>
 
       {activeTab === 'forms' ? (
@@ -516,16 +720,206 @@ const Compliance = () => {
           emptyMessage="No custom compliance forms created yet. Click 'Create Form' to build one."
         />
       ) : (
-        <DataTable 
-          title="Staff Documentation"
-          columns={columns}
-          data={filteredData}
-          actions={actions}
-          onRowClick={(row) => { setSelectedDoc(row); setShowModal(true); }}
-          loading={loading}
-          emptyMessage="No compliance records found for this filter."
-        />
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.8fr) minmax(280px, 0.9fr)', gap: '20px', alignItems: 'start' }}>
+          {/* Records Table */}
+          <div style={{ background: '#fff', borderRadius: '16px', border: '1px solid #E5E7EB', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '14px' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid #E5E7EB', background: '#F9FAFB' }}>
+                    <th style={{ padding: '14px 18px', fontWeight: 600, color: '#374151' }}>Member</th>
+                    <th style={{ padding: '14px 18px', fontWeight: 600, color: '#374151' }}>Role / Team</th>
+                    <th style={{ padding: '14px 18px', fontWeight: 600, color: '#374151' }}>Requirement</th>
+                    <th style={{ padding: '14px 18px', fontWeight: 600, color: '#374151' }}>Submitted</th>
+                    <th style={{ padding: '14px 18px', fontWeight: 600, color: '#374151' }}>Expiry</th>
+                    <th style={{ padding: '14px 18px', fontWeight: 600, color: '#374151' }}>Status</th>
+                    <th style={{ padding: '14px 18px', fontWeight: 600, color: '#374151' }}>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredData.map((row, idx) => {
+                    const isSelected = activeDoc?.id === row.id;
+                    return (
+                      <tr 
+                        key={row.id || idx}
+                        onClick={() => setSelectedDoc(row)}
+                        style={{ 
+                          borderBottom: '1px solid #F3F4F6',
+                          background: isSelected ? '#F0FDFA' : '#fff',
+                          cursor: 'pointer',
+                          transition: 'background 0.15s'
+                        }}
+                      >
+                        <td style={{ padding: '14px 18px', fontWeight: 600, color: '#111827' }}>
+                          {row.name}
+                        </td>
+                        <td style={{ padding: '14px 18px', color: '#4B5563' }}>
+                          {row.role} {row.teamName ? `• ${row.teamName}` : ''}
+                        </td>
+                        <td style={{ padding: '14px 18px', color: '#111827' }}>
+                          {row.document || row.requirement}
+                        </td>
+                        <td style={{ padding: '14px 18px', color: '#4B5563' }}>
+                          {row.submitted || (row.submittedAt?.toDate?.().toLocaleDateString() || '7 Nov 2026')}
+                        </td>
+                        <td style={{ padding: '14px 18px', color: '#4B5563' }}>
+                          {row.expiry || '30 Jun 2027'}
+                        </td>
+                        <td style={{ padding: '14px 18px' }}>
+                          <span style={{
+                            display: 'inline-block',
+                            padding: '4px 10px',
+                            borderRadius: '9999px',
+                            fontSize: '12px',
+                            fontWeight: 500,
+                            background: row.status === 'Approved' ? '#DCFCE7' : row.status === 'Expired' || row.status === 'Rejected' ? '#FEE2E2' : '#FEF3C7',
+                            color: row.status === 'Approved' ? '#166534' : row.status === 'Expired' || row.status === 'Rejected' ? '#991B1B' : '#92400E'
+                          }}>
+                            {row.status || 'Awaiting review'}
+                          </span>
+                        </td>
+                        <td style={{ padding: '14px 18px' }}>
+                          <button 
+                            className="btn btn-outline btn-sm"
+                            onClick={(e) => { e.stopPropagation(); setSelectedDoc(row); }}
+                            style={{ padding: '4px 12px', fontSize: '13px', borderColor: '#D1D5DB' }}
+                          >
+                            Review
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Right Side Review Drawer (Image 7) */}
+          <div style={{ background: '#fff', borderRadius: '16px', border: '1px solid #E5E7EB', padding: '24px', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
+            <h3 style={{ fontSize: '16px', fontWeight: 700, margin: '0 0 16px 0', color: '#111827' }}>Review submission</h3>
+            
+            <div style={{ marginBottom: '16px' }}>
+              <div style={{ fontSize: '15px', fontWeight: 600, color: '#111827', marginBottom: '2px' }}>
+                {activeDoc?.name || 'Example Member A'}
+              </div>
+              <div style={{ fontSize: '14px', color: '#374151', marginBottom: '2px' }}>
+                {activeDoc?.document || activeDoc?.requirement || 'First Aid Certificate'}
+              </div>
+              <div style={{ fontSize: '13px', color: '#6B7280' }}>
+                Expiry: {activeDoc?.expiry || '30 Jun 2027'}
+              </div>
+            </div>
+
+            {/* PDF Box */}
+            <div style={{
+              background: '#F9FAFB',
+              border: '1px solid #E5E7EB',
+              borderRadius: '12px',
+              padding: '24px 16px',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginBottom: '20px'
+            }}>
+              <div style={{
+                position: 'relative',
+                width: '56px',
+                height: '68px',
+                background: '#fff',
+                border: '1px solid #E5E7EB',
+                borderRadius: '6px',
+                boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginBottom: '12px'
+              }}>
+                <span style={{
+                  position: 'absolute',
+                  top: '-6px',
+                  left: '6px',
+                  background: '#EF4444',
+                  color: '#fff',
+                  fontSize: '9px',
+                  fontWeight: 700,
+                  padding: '1px 4px',
+                  borderRadius: '3px'
+                }}>PDF</span>
+                <FileText size={28} color="#DC2626" />
+              </div>
+              <a 
+                href={activeDoc?.fileUrl || '#'} 
+                target="_blank" 
+                rel="noreferrer"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  color: '#0D9488',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  textDecoration: 'none'
+                }}
+              >
+                <ExternalLink size={14} />
+                <span>View uploaded PDF</span>
+              </a>
+            </div>
+
+            {/* Action Buttons */}
+            <div style={{ display: 'flex', gap: '12px', marginBottom: '16px' }}>
+              <button 
+                className="btn btn-primary"
+                style={{ flex: 1, background: '#0D9488', justifyContent: 'center', height: '42px', fontWeight: 600 }}
+                onClick={() => handleStatusChange(activeDoc?.id, 'Approved')}
+                disabled={isUpdating}
+              >
+                Approve
+              </button>
+              <button 
+                className="btn btn-outline"
+                style={{ flex: 1, borderColor: '#EF4444', color: '#EF4444', justifyContent: 'center', height: '42px', fontWeight: 600 }}
+                onClick={() => handleStatusChange(activeDoc?.id, 'Rejected', rejectionReason)}
+                disabled={isUpdating}
+              >
+                Reject
+              </button>
+            </div>
+
+            {/* Rejection reason textarea */}
+            <div style={{ marginBottom: '16px' }}>
+              <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#111827', marginBottom: '6px' }}>
+                Rejection reason
+              </label>
+              <textarea 
+                className="form-control"
+                placeholder="Reason shown to member..."
+                value={rejectionReason}
+                onChange={(e) => setRejectionReason(e.target.value)}
+                rows={2}
+                style={{ resize: 'vertical', fontSize: '13px' }}
+              />
+            </div>
+
+            <div style={{ fontSize: '12px', color: '#6B7280', textAlign: 'center' }}>
+              Submission alert • In-app + email sent to reviewers
+            </div>
+          </div>
+        </div>
       )}
+
+      {/* Footer */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '28px', paddingTop: '16px', borderTop: '1px solid #E5E7EB', fontSize: '13px', color: '#6B7280' }}>
+        <a href="#audit-history" style={{ color: '#0D9488', textDecoration: 'none', fontWeight: 500 }}>
+          View audit history
+        </a>
+        <div>
+          Last daily check: 7 Nov 2026
+        </div>
+      </div>
 
       {/* Document Review Modal */}
       <Modal 

@@ -1,5 +1,5 @@
-import { useEffect, useState, useMemo, useCallback } from 'react';
-import { collection, getDocs } from 'firebase/firestore';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
+import { collection, getDocs, doc, query, where, orderBy } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { useClub } from '../context/ClubContext';
 import { useAuth } from '../context/AuthContext';
@@ -7,16 +7,18 @@ import { complianceService } from '../services/complianceService';
 import Modal from '../components/Modal';
 import FileUpload from '../components/FileUpload';
 import {
-  ShieldCheck, FileText, CheckCircle, Clock, AlertCircle, Upload,
-  Users, Layers, RefreshCw, Calendar, XCircle
+  ShieldCheck, FileText, CheckCircle2, Clock, AlertCircle, Upload,
+  Users, Layers, RefreshCw, Calendar, XCircle, ArrowUpRight,
+  ExternalLink, User, Eye, AlertTriangle, File
 } from 'lucide-react';
+import { DESIGN_TOKENS } from '../services/trainingService';
 
-const STATUS_META = {
-  Approved: { badge: 'badge-success', color: '#10b981', icon: CheckCircle, label: 'Approved' },
-  Pending: { badge: 'badge-warning', color: '#f59e0b', icon: Clock, label: 'Pending Review' },
-  Expired: { badge: 'badge-danger', color: '#ef4444', icon: AlertCircle, label: 'Expired' },
-  Rejected: { badge: 'badge-danger', color: '#ef4444', icon: XCircle, label: 'Rejected' },
-};
+const DEFAULT_VOLUNTEER_CHECKLIST = [
+  { id: 'req-wwcc', name: 'WWCC', fullName: 'Working With Children Check (WWCC)', type: 'Certificate', expiryRequired: true },
+  { id: 'req-cpr', name: 'CPR Certificate', fullName: 'CPR Certificate (HLTAID009)', type: 'Certificate', expiryRequired: true },
+  { id: 'req-firstaid', name: 'First Aid Certificate', fullName: 'First Aid Certificate (HLTAID011)', type: 'Certificate', expiryRequired: true },
+  { id: 'req-volagreement', name: 'Volunteer Agreement', fullName: 'Volunteer Agreement & Code of Conduct', type: 'Policy Agreement', expiryRequired: false },
+];
 
 export default function UserCompliance() {
   const { selectedClubId, selectedClub } = useClub();
@@ -29,13 +31,19 @@ export default function UserCompliance() {
   const [groups, setGroups] = useState([]);
   const [members, setMembers] = useState([]);
 
-  // Active submit modal
-  const [activeReq, setActiveReq] = useState(null); // { form, req }
+  // Viewing selector: 'me' or childId
+  const [viewingTarget, setViewingTarget] = useState('me');
+
+  // Submit / Renew modal state
+  const [activeReq, setActiveReq] = useState(null); // { name, type, ... }
   const [uploadedUrl, setUploadedUrl] = useState('');
   const [expiryDate, setExpiryDate] = useState('');
   const [saving, setSaving] = useState(false);
 
-  const load = useCallback(async () => {
+  // View submission modal
+  const [viewingSub, setViewingSub] = useState(null);
+
+  const loadData = useCallback(async () => {
     if (!selectedClubId) { setLoading(false); return; }
     setLoading(true);
     try {
@@ -53,13 +61,14 @@ export default function UserCompliance() {
       setMembers(mSnap.docs.map(d => ({ id: d.id, ...d.data() })));
     } catch (err) {
       console.error('Error loading compliance portal:', err);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }, [selectedClubId, user?.uid]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { loadData(); }, [loadData]);
 
-  // Locate this user's member record in the club
+  // Current user member record
   const clubMemberRecord = useMemo(() => {
     if (!user) return null;
     const emailLower = user.email?.toLowerCase().trim();
@@ -71,7 +80,7 @@ export default function UserCompliance() {
     );
   }, [members, user]);
 
-  // Roles held by this user in the club
+  // Roles held by user in club
   const myRoles = useMemo(() => {
     const set = new Set();
     (clubMemberRecord?.roles || []).forEach(r => set.add(r));
@@ -84,249 +93,423 @@ export default function UserCompliance() {
     return [...set].filter(Boolean);
   }, [clubMemberRecord, profile, selectedClubId]);
 
-  // Teams & groups this user belongs to
-  const myTeamIds = useMemo(() => {
-    const set = new Set(clubMemberRecord?.teamIds || []);
-    teams.forEach(t => {
-      if (t.memberIds?.includes(user?.uid)) set.add(t.id);
-      if (clubMemberRecord && t.memberIds?.includes(clubMemberRecord.id)) set.add(t.id);
+  // User's teams
+  const myTeams = useMemo(() => {
+    return teams.filter(t => {
+      return t.memberIds?.includes(user?.uid) || 
+        (clubMemberRecord && (t.memberIds?.includes(clubMemberRecord.id) || clubMemberRecord.teamIds?.includes(t.id)));
     });
-    return [...set];
-  }, [clubMemberRecord, teams, user]);
+  }, [teams, user, clubMemberRecord]);
 
-  const myGroupIds = useMemo(() => {
-    const set = new Set(clubMemberRecord?.groupIds || []);
-    groups.forEach(g => {
-      if (g.memberIds?.includes(user?.uid)) set.add(g.id);
-      if (clubMemberRecord && g.memberIds?.includes(clubMemberRecord.id)) set.add(g.id);
-      if (g.memberIds?.includes(clubMemberRecord?.email)) set.add(g.id);
-    });
-    return [...set];
-  }, [clubMemberRecord, groups, user]);
-
-  // Forms that apply to this member (inclusive match on club/team/group/role)
-  const applicableForms = useMemo(() => {
-    return forms.filter(form => {
-      if (form.targetType === 'all') return true;
-      const teamMatch = (form.targetTeamIds || []).some(id => myTeamIds.includes(id));
-      const groupMatch = (form.targetGroupIds || []).some(id => myGroupIds.includes(id));
-      const roleMatch = (form.targetRoles || []).some(r => myRoles.includes(r));
-      const noScope = !form.targetTeamIds?.length && !form.targetGroupIds?.length;
-      return teamMatch || groupMatch || roleMatch || noScope;
-    });
-  }, [forms, myTeamIds, myGroupIds, myRoles]);
-
-  // Find an existing submission for a specific requirement
-  const submissionFor = (formId, reqName) =>
-    submissions.find(s =>
-      s.formId === formId &&
-      (s.document === reqName || s.requirementName === reqName)
+  // Children belonging to this parent (if any)
+  const childrenList = useMemo(() => {
+    if (!clubMemberRecord) return [];
+    return members.filter(m => 
+      m.parentUid === user?.uid || 
+      m.guardianEmail?.toLowerCase().trim() === user?.email?.toLowerCase().trim()
     );
+  }, [members, user, clubMemberRecord]);
 
-  const openSubmit = (form, req) => {
-    setActiveReq({ form, req });
-    setUploadedUrl('');
-    setExpiryDate('');
-  };
+  // Active target member for compliance
+  const activeSubject = useMemo(() => {
+    if (viewingTarget === 'me' || !viewingTarget) {
+      return {
+        id: user?.uid,
+        name: profile?.displayName || clubMemberRecord?.displayName || clubMemberRecord?.name || 'Me',
+        role: myRoles.join(', ') || 'Volunteer',
+        team: myTeams[0]?.name || 'U17'
+      };
+    }
+    const child = childrenList.find(c => c.id === viewingTarget);
+    return {
+      id: child?.id,
+      name: child?.displayName || child?.name || 'Child',
+      role: 'Player',
+      team: teams.find(t => t.id === child?.teamIds?.[0])?.name || 'Junior'
+    };
+  }, [viewingTarget, user, profile, clubMemberRecord, myRoles, myTeams, childrenList, teams]);
 
-  const closeSubmit = () => {
-    setActiveReq(null);
-    setUploadedUrl('');
-    setExpiryDate('');
-  };
+  // Standard requirements list for active role
+  const requirementsList = useMemo(() => {
+    // If club admin defined complianceForms matching role/team, extract requirements
+    const applicableForms = forms.filter(f => f.targetType === 'all' || (f.targetRoles || []).some(r => myRoles.includes(r)));
+    if (applicableForms.length > 0 && applicableForms[0].requirements?.length > 0) {
+      return applicableForms[0].requirements;
+    }
+    return DEFAULT_VOLUNTEER_CHECKLIST;
+  }, [forms, myRoles]);
 
-  const handleSubmit = async () => {
+  // Compute status for each requirement
+  const computedRequirements = useMemo(() => {
+    return requirementsList.map(req => {
+      const sub = submissions.find(s => 
+        (s.document === req.name || s.requirementName === req.name || s.name === req.name) &&
+        (viewingTarget === 'me' ? (s.uid === user?.uid || s.memberId === clubMemberRecord?.id) : s.memberId === viewingTarget)
+      );
+
+      const status = complianceService.calculateStatus(sub, req);
+      return {
+        ...req,
+        submission: sub,
+        computedStatus: status,
+        expiryDate: sub?.expiryDate || sub?.expiry || null,
+        submittedAt: sub?.submittedAt || null
+      };
+    });
+  }, [requirementsList, submissions, viewingTarget, user, clubMemberRecord]);
+
+  // Summary counts (Concept badges: Current, Pending, Expiring soon, Action required)
+  const stats = useMemo(() => {
+    let current = 0;
+    let pending = 0;
+    let expiring = 0;
+    let actionRequired = 0;
+
+    computedRequirements.forEach(r => {
+      if (r.computedStatus === 'Current') current++;
+      else if (r.computedStatus === 'Pending review') pending++;
+      else if (r.computedStatus === 'Expiring soon') expiring++;
+      else actionRequired++; // Missing, Expired, Rejected
+    });
+
+    return { current, pending, expiring, actionRequired };
+  }, [computedRequirements]);
+
+  // Submit / Upload Handler
+  const handleDocumentSubmit = async () => {
     if (!activeReq) return;
-    if (!uploadedUrl) return alert('Please upload your document before submitting.');
-    const { form, req } = activeReq;
-    if (req.expiryRequired && !expiryDate) return alert('Please provide the document expiry date.');
+    if (!uploadedUrl) {
+      alert('Please select or upload a document file.');
+      return;
+    }
+    if (activeReq.expiryRequired && !expiryDate) {
+      alert('Please specify the document expiration date.');
+      return;
+    }
 
     setSaving(true);
     try {
       await complianceService.submitComplianceDocument(selectedClubId, {
-        uid: user?.uid || '',
-        name: profile?.displayName || clubMemberRecord?.name || 'Club Member',
-        email: user?.email || clubMemberRecord?.email || '',
-        role: myRoles.join(', ') || 'Member',
-        formId: form.id,
-        formTitle: form.title,
-        document: req.name,
-        requirementName: req.name,
-        type: req.type || form.type || 'Certificate',
+        uid: activeSubject.id,
+        memberId: activeSubject.id,
+        userName: activeSubject.name,
+        name: activeSubject.name,
+        email: user?.email || '',
+        role: activeSubject.role,
+        requirementName: activeReq.name,
+        document: activeReq.name,
+        type: activeReq.type || 'Certificate',
+        expiryDate: expiryDate || '',
         expiry: expiryDate || '',
         fileUrl: uploadedUrl,
-        targetType: form.targetType || 'all',
-        notes: '',
+        submittedAt: new Date().toISOString()
       });
-      closeSubmit();
-      await load();
+
+      alert('Document submitted successfully! Sent to club reviewers.');
+      setActiveReq(null);
+      setUploadedUrl('');
+      setExpiryDate('');
+      loadData();
     } catch (err) {
-      alert('Failed to submit document: ' + err.message);
+      alert('Error submitting document: ' + err.message);
     } finally {
       setSaving(false);
     }
   };
 
   return (
-    <div style={{ maxWidth: '1000px', margin: '0 auto', padding: '24px' }}>
-      {/* Header */}
-      <div className="page-header" style={{ marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '12px' }}>
+    <div style={{ maxWidth: '1120px', margin: '0 auto', padding: '24px', fontFamily: 'Arial, sans-serif' }}>
+      
+      {/* Top Header matching Concept */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '14px', marginBottom: '20px' }}>
         <div>
-          <h1>Compliance &amp; Documents</h1>
-          <p className="subtitle">Submit and track the documents required for you at {selectedClub?.name}</p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <h1 style={{ margin: 0, fontSize: '24px', fontWeight: 800, color: '#0F172A' }}>
+              My Compliance
+            </h1>
+            <span style={{ fontSize: '11px', fontWeight: 600, background: '#0D9488', color: '#FFFFFF', padding: '3px 10px', borderRadius: '999px' }}>
+              Concept • Example data
+            </span>
+          </div>
+          <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: '#64748B' }}>
+            Your requirements, documents and upcoming renewals
+          </p>
         </div>
-        <button className="btn btn-outline" onClick={load}>
-          <RefreshCw size={16} className={loading ? 'animate-spin' : ''} /> <span>Refresh</span>
-        </button>
+
+        {/* Viewing Selector & Role Pill */}
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+          <select
+            className="form-control"
+            value={viewingTarget}
+            onChange={e => setViewingTarget(e.target.value)}
+            style={{ width: 'auto', fontSize: '13px', fontWeight: 600, borderRadius: '10px', padding: '6px 12px' }}
+          >
+            <option value="me">Viewing: Me</option>
+            {childrenList.map(c => (
+              <option key={c.id} value={c.id}>Viewing: {c.displayName || c.name} (Child)</option>
+            ))}
+          </select>
+
+          <span style={{ fontSize: '12px', fontWeight: 700, background: '#F1F5F9', color: '#334155', padding: '8px 14px', borderRadius: '10px', border: '1px solid #E2E8F0' }}>
+            {activeSubject.role} • {activeSubject.team}
+          </span>
+        </div>
       </div>
 
-      {loading ? (
-        <p style={{ textAlign: 'center', color: 'var(--text-secondary)', padding: '40px 0' }}>Loading your requirements...</p>
-      ) : applicableForms.length === 0 ? (
-        <div className="card shadow-sm" style={{ padding: '60px 20px', textAlign: 'center', border: '1px solid var(--border)', borderRadius: '16px', background: '#fff' }}>
-          <ShieldCheck size={40} color="var(--primary)" style={{ marginBottom: '12px' }} />
-          <h3 style={{ margin: 0 }}>You're all clear</h3>
-          <p className="text-muted" style={{ marginTop: '6px' }}>No compliance documents are currently required for you.</p>
+      {/* Main Grid: Checklist Card on Left + Side Notification Widget on Right */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr', gap: '24px', alignItems: 'start' }}>
+        
+        {/* Left Column: Checklist Card */}
+        <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '16px', padding: '24px', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
+          
+          <h3 style={{ margin: '0 0 16px 0', fontSize: '16px', fontWeight: 800, color: '#0F172A' }}>
+            Team Volunteers Checklist
+          </h3>
+
+          {/* 4 Summary Stat Pills (Image 6) */}
+          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '20px' }}>
+            <span style={{ fontSize: '12px', fontWeight: 700, background: '#F0FDF4', color: '#16A34A', border: '1px solid #BBF7D0', padding: '6px 12px', borderRadius: '10px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+              <Clock size={13} /> {stats.current} current
+            </span>
+            <span style={{ fontSize: '12px', fontWeight: 700, background: '#FEF3C7', color: '#D97706', border: '1px solid #FDE68A', padding: '6px 12px', borderRadius: '10px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+              <User size={13} /> {stats.pending} pending
+            </span>
+            <span style={{ fontSize: '12px', fontWeight: 700, background: '#FFFBEB', color: '#B45309', border: '1px solid #FCD34D', padding: '6px 12px', borderRadius: '10px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+              <Clock size={13} /> {stats.expiring} expiring soon
+            </span>
+            <span style={{ fontSize: '12px', fontWeight: 700, background: '#FEF2F2', color: '#DC2626', border: '1px solid #FCA5A5', padding: '6px 12px', borderRadius: '10px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+              <AlertCircle size={13} /> {stats.actionRequired} action required
+            </span>
+          </div>
+
+          {/* Requirements Table */}
+          <table style={{ width: '100%', borderCollapse: 'collapse', margin: 0 }}>
+            <thead>
+              <tr style={{ background: '#F8FAFC', borderBottom: '1px solid #E2E8F0', textAlign: 'left', fontSize: '11px', textTransform: 'uppercase', color: '#64748B' }}>
+                <th style={{ padding: '12px 14px' }}>Requirement</th>
+                <th style={{ padding: '12px 14px' }}>Status</th>
+                <th style={{ padding: '12px 14px' }}>Date</th>
+                <th style={{ padding: '12px 14px', textAlign: 'right' }}>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {computedRequirements.map(req => {
+                const isCurrent = req.computedStatus === 'Current';
+                const isExpiring = req.computedStatus === 'Expiring soon';
+                const isPending = req.computedStatus === 'Pending review';
+                const isActionReq = req.computedStatus === 'Missing' || req.computedStatus === 'Expired' || req.computedStatus === 'Rejected';
+
+                return (
+                  <tr key={req.name} style={{ borderBottom: '1px solid #F1F5F9' }}>
+                    <td style={{ padding: '14px 14px', fontWeight: 700, fontSize: '13px', color: '#0F172A' }}>
+                      {req.name}
+                    </td>
+
+                    <td style={{ padding: '14px 14px' }}>
+                      {isCurrent && (
+                        <span style={{ fontSize: '11px', fontWeight: 700, color: '#16A34A', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <CheckCircle2 size={13} color="#16A34A" /> Current
+                        </span>
+                      )}
+                      {isExpiring && (
+                        <span style={{ fontSize: '11px', fontWeight: 700, color: '#D97706', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <Clock size={13} color="#D97706" /> Expiring soon
+                        </span>
+                      )}
+                      {isPending && (
+                        <span style={{ fontSize: '11px', fontWeight: 700, color: '#D97706', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <Clock size={13} color="#D97706" /> Pending review
+                        </span>
+                      )}
+                      {isActionReq && (
+                        <span style={{ fontSize: '11px', fontWeight: 700, color: '#DC2626', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <AlertCircle size={13} color="#DC2626" /> {req.computedStatus}
+                        </span>
+                      )}
+                    </td>
+
+                    <td style={{ padding: '14px 14px', fontSize: '12px', color: '#64748B' }}>
+                      {req.expiryDate ? `Expires ${req.expiryDate}` : req.submittedAt ? `Submitted recently` : 'No submission'}
+                    </td>
+
+                    <td style={{ padding: '14px 14px', textAlign: 'right' }}>
+                      {isCurrent && (
+                        <button
+                          onClick={() => setViewingSub(req.submission)}
+                          className="btn btn-outline"
+                          style={{ padding: '5px 14px', fontSize: '12px', borderRadius: '8px' }}
+                        >
+                          View
+                        </button>
+                      )}
+                      {isExpiring && (
+                        <button
+                          onClick={() => { setActiveReq(req); setExpiryDate(req.expiryDate || ''); }}
+                          className="btn btn-primary"
+                          style={{ padding: '5px 14px', fontSize: '12px', borderRadius: '8px', background: DESIGN_TOKENS.primaryTeal, borderColor: DESIGN_TOKENS.primaryTeal }}
+                        >
+                          Renew
+                        </button>
+                      )}
+                      {isPending && (
+                        <button
+                          onClick={() => setViewingSub(req.submission)}
+                          className="btn btn-outline"
+                          style={{ padding: '5px 14px', fontSize: '12px', borderRadius: '8px' }}
+                        >
+                          View submission
+                        </button>
+                      )}
+                      {isActionReq && (
+                        <button
+                          onClick={() => { setActiveReq(req); setExpiryDate(''); }}
+                          className="btn btn-primary"
+                          style={{ padding: '5px 14px', fontSize: '12px', borderRadius: '8px', background: DESIGN_TOKENS.primaryTeal, borderColor: DESIGN_TOKENS.primaryTeal }}
+                        >
+                          Upload
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+
+          {/* Footer Allowed Formats note */}
+          <div style={{ marginTop: '20px', fontSize: '11px', color: '#94A3B8', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <Upload size={12} /> PDF, JPG or PNG • Up to 10MB • Camera or file
+          </div>
+
         </div>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          {applicableForms.map(form => {
-            const reqs = (form.requirements && form.requirements.length > 0)
-              ? form.requirements
-              : [{ name: form.title, type: form.type || 'Certificate', mandatory: true, expiryRequired: !!form.expiryRequired, notes: '' }];
 
-            const completed = reqs.filter(r => {
-              const s = submissionFor(form.id, r.name);
-              return s && s.status === 'Approved';
-            }).length;
-
-            return (
-              <div key={form.id} className="card shadow-sm" style={{ border: '1px solid var(--border)', borderRadius: '16px', background: '#fff', padding: '20px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', flexWrap: 'wrap' }}>
-                  <div>
-                    <h3 style={{ margin: '0 0 4px 0', fontSize: '17px', fontWeight: 800 }}>{form.title}</h3>
-                    <p className="text-muted" style={{ margin: 0, fontSize: '13px' }}>{form.description || 'Club compliance requirement'}</p>
-                  </div>
-                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                    <span className="badge badge-info">{form.type || 'Certificate'}</span>
-                    <span className="badge badge-default" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                      {completed}/{reqs.length} complete
-                    </span>
-                  </div>
-                </div>
-
-                {/* Progress bar */}
-                <div style={{ width: '100%', height: '6px', background: '#e2e8f0', borderRadius: '4px', overflow: 'hidden', margin: '14px 0 16px' }}>
-                  <div style={{ width: `${reqs.length ? (completed / reqs.length) * 100 : 0}%`, height: '100%', background: 'linear-gradient(90deg, #10b981, #059669)', transition: 'width 0.25s' }} />
-                </div>
-
-                {/* Requirements list */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                  {reqs.map((req, i) => {
-                    const sub = submissionFor(form.id, req.name);
-                    const meta = sub ? (STATUS_META[sub.status] || STATUS_META.Pending) : null;
-                    const StatusIcon = meta?.icon;
-                    return (
-                      <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', padding: '12px 14px', borderRadius: '12px', background: '#f8fafc', border: '1px solid var(--border-light, #f1f5f9)', flexWrap: 'wrap' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, minWidth: '220px' }}>
-                          <FileText size={18} color="var(--text-secondary)" />
-                          <div>
-                            <div style={{ fontWeight: 600, fontSize: '14px' }}>{req.name}</div>
-                            <div style={{ fontSize: '12px', color: 'var(--text-secondary)', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                              <span>{req.type}</span>
-                              {req.mandatory ? <span style={{ color: '#ef4444' }}>Required</span> : <span>Optional</span>}
-                              {req.expiryRequired && <span>· Expiry needed</span>}
-                            </div>
-                            {req.notes && <div style={{ fontSize: '11px', color: 'var(--text-lighter)', marginTop: '2px' }}>{req.notes}</div>}
-                          </div>
-                        </div>
-
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                          {meta && (
-                            <span className={`badge ${meta.badge}`} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                              <StatusIcon size={12} /> {meta.label}
-                            </span>
-                          )}
-                          {sub && sub.status !== 'Approved' && (
-                            <button className="btn btn-outline btn-sm" style={{ padding: '6px 12px', fontSize: '12px' }} onClick={() => openSubmit(form, req)}>
-                              Re-upload
-                            </button>
-                          )}
-                          {!sub && (
-                            <button className="btn btn-primary btn-sm" style={{ padding: '6px 12px', fontSize: '12px', display: 'inline-flex', alignItems: 'center', gap: '5px' }} onClick={() => openSubmit(form, req)}>
-                              <Upload size={13} /> Upload
-                            </button>
-                          )}
-                          {sub?.fileUrl && (
-                            <a href={sub.fileUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: '12px', fontWeight: 600 }}>
-                              View
-                            </a>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {/* Scope indicator */}
-                <div style={{ marginTop: '14px', display: 'flex', gap: '8px', alignItems: 'center', fontSize: '11px', color: 'var(--text-secondary)', flexWrap: 'wrap' }}>
-                  {form.targetType === 'all' || (!form.targetTeamIds?.length && !form.targetGroupIds?.length) ? (
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}><Users size={12} /> Club-wide requirement</span>
-                  ) : (
-                    <>
-                      {form.targetTeamIds?.length > 0 && <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}><Users size={12} /> {form.targetTeamIds.map(id => teams.find(t => t.id === id)?.name).filter(Boolean).join(', ')}</span>}
-                      {form.targetGroupIds?.length > 0 && <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}><Layers size={12} /> {form.targetGroupIds.map(id => groups.find(g => g.id === id)?.name).filter(Boolean).join(', ')}</span>}
-                    </>
-                  )}
-                </div>
-              </div>
-            );
-          })}
+        {/* Right Column: Side Card Update Widget (Image 6) */}
+        <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '16px', padding: '20px', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
+          <div style={{ fontWeight: 700, fontSize: '13px', color: '#0F172A', marginBottom: '4px' }}>
+            Compliance update • Your WWCC has been approved.
+          </div>
+          <button
+            onClick={() => {
+              const wwcc = computedRequirements.find(r => r.name.toLowerCase().includes('wwcc'));
+              if (wwcc?.submission) setViewingSub(wwcc.submission);
+              else alert('WWCC is in valid approved status.');
+            }}
+            style={{ background: 'none', border: 'none', padding: 0, color: '#0D9488', fontWeight: 700, fontSize: '12px', cursor: 'pointer', marginTop: '6px' }}
+          >
+            View requirement
+          </button>
         </div>
-      )}
 
-      {/* Upload / Submit Modal */}
+      </div>
+
+      {/* ─── MODAL: UPLOAD / RENEW REQUIREMENT ───────────────────────────────── */}
       <Modal
         open={!!activeReq}
-        onClose={closeSubmit}
-        title={activeReq ? `Submit: ${activeReq.req.name}` : 'Submit Document'}
+        onClose={() => setActiveReq(null)}
+        title={`Upload Evidence: ${activeReq?.name || 'Document'}`}
       >
         {activeReq && (
-          <div>
-            <div style={{ marginBottom: '16px', padding: '12px 14px', background: '#f8fafc', borderRadius: '10px', border: '1px solid var(--border-light, #f1f5f9)' }}>
-              <div style={{ fontWeight: 700, fontSize: '14px' }}>{activeReq.req.name}</div>
-              <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px' }}>
-                Part of "{activeReq.form.title}" · {activeReq.req.type}
-              </div>
-              {activeReq.req.notes && <div style={{ fontSize: '12px', color: 'var(--text-lighter)', marginTop: '6px' }}>{activeReq.req.notes}</div>}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <p style={{ margin: 0, fontSize: '13px', color: '#475569' }}>
+              Upload your verification evidence for <strong>{activeReq.name}</strong>. Files are securely audited by club administrators.
+            </p>
+
+            <div className="form-group">
+              <label style={{ fontSize: '12px', fontWeight: 700 }}>Document File (PDF, JPG, PNG up to 10MB)</label>
+              <FileUpload
+                accept="application/pdf,image/png,image/jpeg"
+                maxSizeMB={10}
+                onFileUploaded={url => setUploadedUrl(url)}
+              />
+              {uploadedUrl && (
+                <div style={{ fontSize: '12px', color: '#16A34A', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '6px' }}>
+                  <CheckCircle2 size={14} /> File uploaded ready to submit
+                </div>
+              )}
             </div>
 
-            <FileUpload
-              title="Upload your document"
-              subtitle="Images or PDF accepted"
-              storagePath={`clubs/${selectedClubId}/compliance/${user?.uid || 'member'}`}
-              autoUpload
-              onUploadComplete={(url) => setUploadedUrl(url)}
-            />
-
-            {activeReq.req.expiryRequired && (
-              <div className="form-group" style={{ marginTop: '16px' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <Calendar size={14} /> Expiry Date <span className="text-danger">*</span>
-                </label>
-                <input type="date" className="form-control" value={expiryDate} onChange={(e) => setExpiryDate(e.target.value)} />
+            {activeReq.expiryRequired && (
+              <div className="form-group">
+                <label style={{ fontSize: '12px', fontWeight: 700 }}>Expiration Date (Required)</label>
+                <input
+                  type="date"
+                  className="form-control"
+                  value={expiryDate}
+                  onChange={e => setExpiryDate(e.target.value)}
+                  required
+                />
               </div>
             )}
 
-            <div className="form-actions" style={{ marginTop: '20px' }}>
-              <button className="btn btn-outline" onClick={closeSubmit} disabled={saving}>Cancel</button>
-              <button className="btn btn-primary" onClick={handleSubmit} disabled={saving || !uploadedUrl}>
-                {saving ? 'Submitting...' : 'Submit for Approval'}
+            <div className="form-actions">
+              <button className="btn btn-outline" onClick={() => setActiveReq(null)} disabled={saving}>
+                Cancel
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={handleDocumentSubmit}
+                disabled={saving || !uploadedUrl}
+                style={{ background: DESIGN_TOKENS.primaryTeal, borderColor: DESIGN_TOKENS.primaryTeal }}
+              >
+                {saving ? 'Submitting...' : 'Submit Evidence'}
               </button>
             </div>
           </div>
         )}
       </Modal>
+
+      {/* ─── MODAL: VIEW SUBMISSION ─────────────────────────────────────────── */}
+      <Modal
+        open={!!viewingSub}
+        onClose={() => setViewingSub(null)}
+        title="Compliance Submission Record"
+      >
+        {viewingSub && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <div style={{ background: '#F8FAFC', padding: '14px', borderRadius: '12px', border: '1px solid #E2E8F0' }}>
+              <div style={{ fontSize: '11px', color: '#64748B' }}>Requirement</div>
+              <div style={{ fontSize: '14px', fontWeight: 700, color: '#0F172A' }}>
+                {viewingSub.requirementName || viewingSub.document || 'Compliance Check'}
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <div style={{ background: '#F8FAFC', padding: '14px', borderRadius: '12px', border: '1px solid #E2E8F0' }}>
+                <div style={{ fontSize: '11px', color: '#64748B' }}>Status</div>
+                <div style={{ fontSize: '13px', fontWeight: 700, color: '#0F172A' }}>
+                  {viewingSub.status || 'Approved'}
+                </div>
+              </div>
+
+              <div style={{ background: '#F8FAFC', padding: '14px', borderRadius: '12px', border: '1px solid #E2E8F0' }}>
+                <div style={{ fontSize: '11px', color: '#64748B' }}>Expiry Date</div>
+                <div style={{ fontSize: '13px', fontWeight: 700, color: '#0F172A' }}>
+                  {viewingSub.expiryDate || viewingSub.expiry || 'No expiry'}
+                </div>
+              </div>
+            </div>
+
+            {viewingSub.fileUrl && (
+              <a
+                href={viewingSub.fileUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn btn-outline"
+                style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '10px' }}
+              >
+                <File size={16} /> View Uploaded Document <ExternalLink size={14} />
+              </a>
+            )}
+
+            <div className="form-actions">
+              <button className="btn btn-primary" onClick={() => setViewingSub(null)}>
+                Close
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
     </div>
   );
 }

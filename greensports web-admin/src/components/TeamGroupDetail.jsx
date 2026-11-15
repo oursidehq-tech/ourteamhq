@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   collection, 
   getDocs, 
@@ -8,33 +8,26 @@ import {
   doc, 
   arrayRemove, 
   arrayUnion, 
-  serverTimestamp 
+  serverTimestamp,
+  query,
+  orderBy
 } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { 
-  ArrowLeft, 
-  Users, 
-  FileText, 
-  CheckSquare, 
-  Calendar, 
-  ClipboardList, 
-  TrendingUp, 
-  Plus, 
-  Edit2, 
-  Trash2, 
-  Eye, 
-  CheckCircle, 
-  Clock, 
-  MapPin, 
-  Trophy, 
-  RefreshCw 
+  ArrowLeft, Users, FileText, CheckSquare, Calendar, 
+  Plus, Edit2, Trash2, Eye, CheckCircle2, Clock, 
+  MapPin, RefreshCw, Pin, AlertTriangle, Shield, Check,
+  AlertCircle
 } from 'lucide-react';
 import DataTable from './DataTable';
 import Modal from './Modal';
 import MultiSelect from './MultiSelect';
+import { trainingService, DESIGN_TOKENS } from '../services/trainingService';
+import { useAuth } from '../context/AuthContext';
 
 export default function TeamGroupDetail({ item, itemType, selectedClubId, onClose }) {
-  const [activeTab, setActiveTab] = useState('members');
+  const { user, profile } = useAuth();
+  const [activeTab, setActiveTab] = useState(itemType === 'team' ? 'overview' : 'members');
   const [members, setMembers] = useState([]);
   const [allClubMembers, setAllClubMembers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -44,32 +37,62 @@ export default function TeamGroupDetail({ item, itemType, selectedClubId, onClos
     posts: [],
     matches: [],
     tasks: [],
-    checklists: [],
-    training: [],
     events: [],
-    shifts: [],
+    trainingSessions: []
   });
   const [loadingTab, setLoadingTab] = useState(false);
+
+  // Updates Subtab: 'published' | 'drafts'
+  const [updatesSubTab, setUpdatesSubTab] = useState('published');
+  // New Update Form State
+  const [newUpdateForm, setNewUpdateForm] = useState({
+    title: '',
+    body: '',
+    audience: `${item.name || item.groupName} — members and authorised guardians`,
+    notifyAudience: true
+  });
+  const [postingUpdate, setPostingUpdate] = useState(false);
+
+  // Duties & Tasks Subtab: 'upcoming' | 'completed'
+  const [dutiesSubTab, setDutiesSubTab] = useState('upcoming');
 
   // Add Member Modal
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [selectedNewMembers, setSelectedNewMembers] = useState([]);
   const [savingMembers, setSavingMembers] = useState(false);
 
-  // Entity Modal (Add or Edit for current active tab)
-  const [activeItemModal, setActiveItemModal] = useState(null); // { mode: 'add' | 'edit' | 'view', tab: string, data: object }
+  // Entity Modal (Add or Edit)
+  const [activeItemModal, setActiveItemModal] = useState(null);
   const [entityForm, setEntityForm] = useState({});
   const [savingEntity, setSavingEntity] = useState(false);
 
-  // Universal tabs list for both Teams and Groups
-  const tabs = [
+  // Single Session Cancel / Reinstate Modals
+  const [cancelSessionModal, setCancelSessionModal] = useState(null);
+  const [cancelReason, setCancelReason] = useState('');
+  const [cancellingSession, setCancellingSession] = useState(false);
+
+  // Admin Bulk Training Cancellation Modal
+  const [bulkCancelModalOpen, setBulkCancelModalOpen] = useState(false);
+  const [bulkCancelForm, setBulkCancelForm] = useState({
+    startDate: new Date().toISOString().slice(0, 10),
+    endDate: new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10),
+    venue: '',
+    reason: ''
+  });
+  const [bulkPreviewSessions, setBulkPreviewSessions] = useState([]);
+  const [executingBulkCancel, setExecutingBulkCancel] = useState(false);
+
+  // Tabs list
+  const tabs = itemType === 'team' ? [
+    { id: 'overview', label: 'Overview', icon: <CheckCircle2 size={16} /> },
+    { id: 'members', label: 'Members & Staff', icon: <Users size={16} /> },
+    { id: 'matches', label: 'Matches & Events', icon: <Calendar size={16} /> },
+    { id: 'tasks', label: 'Duties & Tasks', icon: <CheckSquare size={16} /> },
+    { id: 'posts', label: 'Updates', icon: <FileText size={16} /> },
+  ] : [
     { id: 'members', label: 'Members', icon: <Users size={16} /> },
-    { id: 'shifts', label: 'Shifts', icon: <Calendar size={16} /> },
-    { id: 'posts', label: itemType === 'team' ? 'Posts / Updates' : 'Updates', icon: <FileText size={16} /> },
-    ...(itemType === 'team' ? [{ id: 'matches', label: 'Matches', icon: <Calendar size={16} /> }] : []),
+    { id: 'posts', label: 'Updates', icon: <FileText size={16} /> },
     { id: 'tasks', label: 'Tasks', icon: <CheckSquare size={16} /> },
-    { id: 'checklists', label: 'Checklists', icon: <ClipboardList size={16} /> },
-    { id: 'training', label: 'Training Plans', icon: <TrendingUp size={16} /> },
     { id: 'events', label: 'Events', icon: <Calendar size={16} /> },
   ];
 
@@ -100,68 +123,53 @@ export default function TeamGroupDetail({ item, itemType, selectedClubId, onClos
   }, [item.id, selectedClubId]);
 
   const fetchTabData = async () => {
-    if (activeTab === 'members') return;
     setLoadingTab(true);
     try {
-      let collectionName = '';
-      switch (activeTab) {
-        case 'posts': collectionName = 'posts'; break;
-        case 'matches': collectionName = 'leagueFixtures'; break;
-        case 'tasks': collectionName = 'tasks'; break;
-        case 'checklists': collectionName = 'checklists'; break;
-        case 'training': collectionName = 'trainingPlans'; break;
-        case 'events': collectionName = 'events'; break;
-        case 'shifts': collectionName = 'rosters'; break;
-        default: break;
-      }
+      const [postsSnap, matchesSnap, tasksSnap, eventsSnap, sessionsSnap] = await Promise.all([
+        getDocs(query(collection(db, 'clubs', selectedClubId, 'posts'), orderBy('createdAt', 'desc'))).catch(() => getDocs(collection(db, 'clubs', selectedClubId, 'posts'))),
+        getDocs(collection(db, 'clubs', selectedClubId, 'leagueFixtures')).catch(() => ({ docs: [] })),
+        getDocs(collection(db, 'clubs', selectedClubId, 'tasks')).catch(() => ({ docs: [] })),
+        getDocs(query(collection(db, 'clubs', selectedClubId, 'events'), orderBy('date', 'desc'))).catch(() => getDocs(collection(db, 'clubs', selectedClubId, 'events'))),
+        getDocs(query(collection(db, 'clubs', selectedClubId, 'trainingSessions'), orderBy('scheduledAt', 'desc'))).catch(() => getDocs(collection(db, 'clubs', selectedClubId, 'trainingSessions')))
+      ]);
 
-      if (!collectionName) { setLoadingTab(false); return; }
+      const allPosts = postsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+      const allMatches = matchesSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+      const allTasks = tasksSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+      const allEvents = eventsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+      const allSessions = sessionsSnap.docs.map(d => ({ id: d.id, ...d.data() })).filter(s => s.isDeleted !== true);
 
-      const snap = await getDocs(collection(db, 'clubs', selectedClubId, collectionName));
-      const allDocs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      const teamName = item.name || item.groupName || '';
 
-      const filtered = allDocs.filter(d => {
-        if (activeTab === 'posts') {
-          return (d.teamIds?.includes(item.id) || d.groupIds?.includes(item.id) || d.teamId === item.id || d.groupId === item.id);
-        }
-        if (activeTab === 'matches') {
-          return d.teamId === item.id || d.homeTeamId === item.id || d.awayTeamId === item.id || (d.teamIds && d.teamIds.includes(item.id)) || d.homeTeam === item.name || d.awayTeam === item.name;
-        }
-        if (activeTab === 'tasks') {
-          return d.assignedTeamIds?.includes(item.id) || d.assignedGroupIds?.includes(item.id) || d.teamId === item.id || d.assignedGroupId === item.id;
-        }
-        if (activeTab === 'checklists') {
-          return d.teamId === item.id || d.groupId === item.id || d.assignedTeamIds?.includes(item.id) || d.assignedGroupIds?.includes(item.id);
-        }
-        if (activeTab === 'training') {
-          return d.teamIds?.includes(item.id) || d.groupIds?.includes(item.id) || d.teamId === item.id || d.groupId === item.id;
-        }
-        if (activeTab === 'events') {
-          return (
-            d.teamIds?.includes(item.id) || 
-            d.groupIds?.includes(item.id) || 
-            d.teamId === item.id || 
-            d.groupId === item.id || 
-            d.assignedGroupId === item.id ||
-            (d.assignedGroupIds && d.assignedGroupIds.includes(String(item.id).toLowerCase()))
-          );
-        }
-        if (activeTab === 'shifts') {
-          return (
-            (d.shifts && d.shifts.some(s => 
-              (s.assignedIds && (s.assignedIds.includes(`team_${item.id}`) || s.assignedIds.includes(`group_${item.id}`) || s.assignedIds.includes(item.id))) ||
-              (s.filledByName && (s.filledByName.toLowerCase().includes((item.name || item.groupName || '').toLowerCase())))
-            )) ||
-            d.groupId === item.id || d.teamId === item.id ||
-            (d.assignedGroupIds && d.assignedGroupIds.includes(String(item.id).toLowerCase()))
-          );
-        }
-        return false;
+      const filteredPosts = allPosts.filter(d => 
+        d.teamIds?.includes(item.id) || d.groupIds?.includes(item.id) || d.teamId === item.id || d.groupId === item.id || (d.audience && d.audience.includes(teamName))
+      );
+
+      const filteredMatches = allMatches.filter(d => 
+        d.teamId === item.id || d.homeTeamId === item.id || d.awayTeamId === item.id || (d.teamIds && d.teamIds.includes(item.id)) || d.homeTeam === teamName || d.awayTeam === teamName
+      );
+
+      const filteredTasks = allTasks.filter(d => 
+        d.assignedTeamIds?.includes(item.id) || d.assignedGroupIds?.includes(item.id) || d.teamId === item.id || d.assignedGroupId === item.id
+      );
+
+      const filteredEvents = allEvents.filter(d => 
+        d.teamIds?.includes(item.id) || d.groupIds?.includes(item.id) || d.teamId === item.id || d.groupId === item.id || d.assignedGroupId === item.id || (d.title && d.title.includes(teamName))
+      );
+
+      const filteredSessions = allSessions.filter(d => 
+        d.teamId === item.id || d.teamName === teamName
+      );
+
+      setTabData({
+        posts: filteredPosts,
+        matches: filteredMatches,
+        tasks: filteredTasks,
+        events: filteredEvents,
+        trainingSessions: filteredSessions
       });
-
-      setTabData(prev => ({ ...prev, [activeTab]: filtered }));
     } catch (err) {
-      console.error(`Error fetching ${activeTab} data:`, err);
+      console.error(`Error fetching tab data:`, err);
     } finally {
       setLoadingTab(false);
     }
@@ -169,20 +177,222 @@ export default function TeamGroupDetail({ item, itemType, selectedClubId, onClos
 
   useEffect(() => {
     fetchTabData();
-  }, [activeTab, item.id, selectedClubId]);
+  }, [item.id, selectedClubId]);
 
-  const handleRemoveMember = async (memberId) => {
-    if (!window.confirm(`Remove this member from the ${itemType}?`)) return;
+  // Combined Activities for Matches & Events tab
+  const combinedActivities = useMemo(() => {
+    const list = [];
+
+    // Training sessions
+    (tabData.trainingSessions || []).forEach(s => {
+      const isCancelled = s.status === 'cancelled';
+      list.push({
+        id: s.id,
+        activity: 'Team training',
+        type: 'Training',
+        dateStr: s.scheduledAt?.slice(0, 10) || '',
+        dateTime: s.scheduledAt ? `${s.scheduledAt.slice(0, 10)}${s.scheduledAt.includes('T') ? ', ' + s.scheduledAt.split('T')[1].slice(0, 5) : ''}` : 'Needs date',
+        venue: s.location || 'Main Oval',
+        visibility: isCancelled ? 'Cancelled' : 'Published',
+        status: s.status || 'scheduled',
+        cancellationReason: s.cancellationReason || '',
+        responses: '—',
+        raw: s,
+        isSession: true
+      });
+    });
+
+    // Matches & events from events collection
+    (tabData.events || []).forEach(e => {
+      const isMatch = e.type === 'match' || e.category === 'match' || e.category === 'fixture';
+      const isCancelled = e.status === 'cancelled';
+      list.push({
+        id: e.id,
+        activity: e.title || (isMatch ? `${item.name} Match` : 'Team event'),
+        type: isMatch ? 'Match' : 'Event',
+        dateStr: e.date || '',
+        dateTime: e.date ? `${e.date}${e.startTime ? ', start ' + e.startTime : ''}` : 'Needs date',
+        venue: e.location || 'Main Oval',
+        visibility: isCancelled ? 'Cancelled' : e.status === 'draft' ? 'Draft' : 'Published',
+        status: e.status || 'scheduled',
+        cancellationReason: e.cancellationReason || '',
+        responses: isMatch ? '12 available • 3 awaiting • 1 unavailable' : '—',
+        raw: e,
+        isEvent: true
+      });
+    });
+
+    return list.sort((a, b) => (a.dateStr || '9999').localeCompare(b.dateStr || '9999'));
+  }, [tabData.trainingSessions, tabData.events, item.name]);
+
+  // Metric counts for Duties & Tasks
+  const dutyMetrics = useMemo(() => {
+    const tasks = tabData.tasks || [];
+    const open = tasks.filter(t => t.status === 'unfilled' || !t.assignedTo).length;
+    const assigned = tasks.filter(t => t.assignedTo && t.status !== 'completed').length;
+    const eventTasks = tasks.filter(t => t.source || t.eventId).length;
+    return { open, assigned, eventTasks };
+  }, [tabData.tasks]);
+
+  // Handle New Update Creation from side form (Image 1)
+  const handlePublishUpdate = async (asDraft = false) => {
+    if (!newUpdateForm.title.trim() || !newUpdateForm.body.trim()) {
+      alert('Please fill in both update title and body.');
+      return;
+    }
+    setPostingUpdate(true);
     try {
-      const memberRef = doc(db, 'clubs', selectedClubId, 'members', memberId);
-      if (itemType === 'team') {
-        await updateDoc(memberRef, { teamIds: arrayRemove(item.id), updatedAt: serverTimestamp() });
-      } else {
-        await updateDoc(memberRef, { groupIds: arrayRemove(item.id), updatedAt: serverTimestamp() });
+      const postPayload = {
+        title: newUpdateForm.title.trim(),
+        content: newUpdateForm.body.trim(),
+        body: newUpdateForm.body.trim(),
+        teamId: item.id,
+        teamIds: [item.id],
+        audience: newUpdateForm.audience,
+        status: asDraft ? 'draft' : 'published',
+        pinned: false,
+        authorName: profile?.displayName || 'Team Staff',
+        authorRole: 'Coach',
+        notifyAudience: newUpdateForm.notifyAudience,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      };
+
+      await addDoc(collection(db, 'clubs', selectedClubId, 'posts'), postPayload);
+
+      // If notifyAudience checked and published, push in-app notification
+      if (!asDraft && newUpdateForm.notifyAudience) {
+        try {
+          await addDoc(collection(db, 'clubs', selectedClubId, 'notifications'), {
+            title: `${item.name || 'Team'} — ${newUpdateForm.title.trim()}`,
+            message: newUpdateForm.body.trim(),
+            body: newUpdateForm.body.trim(),
+            recipientId: item.id,
+            category: 'teams',
+            clubId: selectedClubId,
+            read: false,
+            type: 'team_update',
+            meta: { teamId: item.id },
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp()
+          });
+        } catch (e) {
+          console.warn('Failed to dispatch notification for team post:', e);
+        }
       }
-      setMembers(prev => prev.filter(m => m.id !== memberId));
+
+      alert(asDraft ? 'Update saved as draft.' : 'Update published successfully!');
+      setNewUpdateForm({
+        title: '',
+        body: '',
+        audience: `${item.name || item.groupName} — members and authorised guardians`,
+        notifyAudience: true
+      });
+      fetchTabData();
     } catch (err) {
-      alert('Error removing member: ' + err.message);
+      alert('Error saving update: ' + err.message);
+    } finally {
+      setPostingUpdate(false);
+    }
+  };
+
+  const handleTogglePin = async (post) => {
+    try {
+      await updateDoc(doc(db, 'clubs', selectedClubId, 'posts', post.id), {
+        pinned: !post.pinned,
+        updatedAt: serverTimestamp()
+      });
+      fetchTabData();
+    } catch (err) {
+      alert('Error updating pin: ' + err.message);
+    }
+  };
+
+  // Single Session Cancellation
+  const handleCancelSession = async () => {
+    if (!cancelSessionModal) return;
+    if (!cancelReason.trim()) {
+      alert('Please provide a cancellation reason.');
+      return;
+    }
+    setCancellingSession(true);
+    try {
+      await trainingService.cancelSession(selectedClubId, cancelSessionModal.id, {
+        reason: cancelReason.trim(),
+        cancelledBy: user.uid,
+        cancelledByName: profile?.displayName || 'Administrator',
+        cancelledByRole: 'Admin'
+      });
+      alert('Training session cancelled and notifications sent.');
+      setCancelSessionModal(null);
+      setCancelReason('');
+      fetchTabData();
+    } catch (err) {
+      alert('Error cancelling session: ' + err.message);
+    } finally {
+      setCancellingSession(false);
+    }
+  };
+
+  // Reinstatement
+  const handleReinstate = async (session) => {
+    if (!window.confirm(`Reinstate training session on ${session.scheduledAt}?`)) return;
+    try {
+      await trainingService.reinstateSession(selectedClubId, session.id, {
+        reinstatedBy: user.uid,
+        reinstatedByName: profile?.displayName || 'Administrator',
+        reinstatedByRole: 'Admin'
+      });
+      alert('Training session reinstated!');
+      fetchTabData();
+    } catch (err) {
+      alert('Error reinstating: ' + err.message);
+    }
+  };
+
+  // Bulk Cancel Preview
+  const handlePreviewBulkCancel = () => {
+    const { startDate, endDate, venue } = bulkCancelForm;
+    const sessions = tabData.trainingSessions || [];
+    const matched = sessions.filter(s => {
+      if (s.status === 'cancelled') return false;
+      const at = s.scheduledAt || '';
+      if (startDate && at < startDate) return false;
+      if (endDate && at > endDate) return false;
+      if (venue && !(s.location || '').toLowerCase().includes(venue.toLowerCase())) return false;
+      return true;
+    });
+    setBulkPreviewSessions(matched);
+  };
+
+  const handleExecuteBulkCancel = async () => {
+    if (!bulkCancelForm.reason.trim()) {
+      alert('A cancellation reason is required.');
+      return;
+    }
+    if (bulkPreviewSessions.length === 0) {
+      alert('No sessions matched the filter window. Click Preview first.');
+      return;
+    }
+    setExecutingBulkCancel(true);
+    try {
+      const res = await trainingService.bulkCancelTrainingSessions(selectedClubId, {
+        startDate: bulkCancelForm.startDate,
+        endDate: bulkCancelForm.endDate,
+        teamId: item.id,
+        venue: bulkCancelForm.venue,
+        reason: bulkCancelForm.reason.trim(),
+        cancelledBy: user.uid,
+        cancelledByName: profile?.displayName || 'Administrator',
+        cancelledByRole: 'Admin'
+      });
+      alert(`Successfully cancelled ${res.count} training occurrences. Synced with My Teams & Calendar.`);
+      setBulkCancelModalOpen(false);
+      fetchTabData();
+    } catch (err) {
+      alert('Error executing bulk cancellation: ' + err.message);
+    } finally {
+      setExecutingBulkCancel(false);
     }
   };
 
@@ -213,489 +423,788 @@ export default function TeamGroupDetail({ item, itemType, selectedClubId, onClos
     }
   };
 
-  // Generic Delete for tab item
-  const handleDeleteItem = async (row) => {
-    if (!window.confirm(`Delete this ${activeTab.slice(0, -1) || 'item'}?`)) return;
-    try {
-      let collectionName = '';
-      switch (activeTab) {
-        case 'posts': collectionName = 'posts'; break;
-        case 'matches': collectionName = 'leagueFixtures'; break;
-        case 'tasks': collectionName = 'tasks'; break;
-        case 'checklists': collectionName = 'checklists'; break;
-        case 'training': collectionName = 'trainingPlans'; break;
-        case 'events': collectionName = 'events'; break;
-        case 'shifts': collectionName = 'rosters'; break;
-        default: break;
-      }
-      if (!collectionName) return;
-
-      await deleteDoc(doc(db, 'clubs', selectedClubId, collectionName, row.id));
-      setTabData(prev => ({
-        ...prev,
-        [activeTab]: prev[activeTab].filter(d => d.id !== row.id)
-      }));
-      if (activeItemModal?.data?.id === row.id) setActiveItemModal(null);
-    } catch (err) {
-      alert('Error deleting: ' + err.message);
-    }
-  };
-
-  // Generic Open Edit Modal for tab item
-  const openEditItem = (row) => {
-    setEntityForm({ ...row });
-    setActiveItemModal({ mode: 'edit', tab: activeTab, data: row });
-  };
-
-  // Open Add Modal for tab item
-  const openAddItem = () => {
-    const today = new Date().toISOString().split('T')[0];
-    let initial = {};
-    if (activeTab === 'posts') {
-      initial = { content: '', visibility: 'Club-Only', authorName: 'Coach / Admin' };
-    } else if (activeTab === 'matches') {
-      initial = { homeTeam: item.name || '', awayTeam: '', date: today, venue: 'Home Ground', competitionName: 'League' };
-    } else if (activeTab === 'tasks') {
-      initial = { title: '', description: '', priority: 'medium', dueDate: today, status: 'pending' };
-    } else if (activeTab === 'checklists') {
-      initial = { 
-        name: `${item.name || item.groupName} Matchday Checklist`, 
-        dueDate: today, 
-        items: [
-          { title: 'Equipment & Supplies Checked', completed: false },
-          { title: 'Attendance Marked', completed: false },
-          { title: 'Safety & Facility Inspection', completed: false }
-        ] 
-      };
-    } else if (activeTab === 'training') {
-      initial = { name: `${item.name || item.groupName} Training Session`, coachName: 'Head Coach', date: today, focusArea: 'Tactics & Passing', description: '' };
-    } else if (activeTab === 'events') {
-      initial = { title: `${item.name || item.groupName} Event`, type: 'training', startDate: today, endDate: today, time: '18:00 - 19:30', location: 'Clubhouse', description: '' };
-    } else if (activeTab === 'shifts') {
-      initial = { 
-        title: `${item.name || item.groupName} Shift Roster`, 
-        date: today, 
-        shifts: [
-          { role: 'Shift Leader / Coordinator', startTime: '09:00', endTime: '12:00', filledByName: '' },
-          { role: 'Duty Staff / Helper', startTime: '12:00', endTime: '15:00', filledByName: '' }
-        ] 
-      };
-    }
-
-    setEntityForm(initial);
-    setActiveItemModal({ mode: 'add', tab: activeTab, data: null });
-  };
-
-  // Save Add/Edit for current tab with mobile sync alignment
-  const handleSaveEntity = async (e) => {
-    e.preventDefault();
-    setSavingEntity(true);
-    const today = new Date().toISOString().split('T')[0];
-
-    try {
-      let collectionName = '';
-      let payload = {};
-
-      switch (activeTab) {
-        case 'posts':
-          collectionName = 'posts';
-          payload = {
-            clubId: selectedClubId,
-            authorId: 'admin',
-            authorName: entityForm.authorName || 'Coach / Admin',
-            content: entityForm.content?.trim(),
-            visibility: entityForm.visibility || (itemType === 'team' ? 'Team-Only' : 'Club-Only'),
-            teamId: itemType === 'team' ? item.id : null,
-            teamIds: itemType === 'team' ? [item.id] : [],
-            groupId: itemType === 'group' ? item.id : null,
-            groupIds: itemType === 'group' ? [item.id] : [],
-            assignedGroupId: item.id,
-            assignedGroupIds: [String(item.id).toLowerCase()],
-            type: 'update',
-            category: 'Updates',
-            isPinned: false,
-            likedBy: [],
-            comments: [],
-          };
-          break;
-        case 'matches':
-          collectionName = 'leagueFixtures';
-          payload = {
-            homeTeam: entityForm.homeTeam?.trim(),
-            awayTeam: entityForm.awayTeam?.trim(),
-            date: entityForm.date,
-            venue: entityForm.venue || 'Home Ground',
-            competitionName: entityForm.competitionName || 'League',
-            score: entityForm.score || '',
-            status: entityForm.status || 'Upcoming',
-            teamId: item.id,
-            teamIds: [item.id],
-            teamName: item.name || '',
-            assignedGroupId: item.id,
-            assignedGroupIds: [String(item.id).toLowerCase()],
-          };
-          break;
-        case 'tasks': {
-          collectionName = 'tasks';
-          const taskDate = entityForm.dueDate || today;
-          payload = {
-            title: entityForm.title?.trim(),
-            description: entityForm.description || '',
-            priority: entityForm.priority || 'medium',
-            status: entityForm.status || 'pending',
-            date: taskDate,
-            dueDate: taskDate,
-            startDate: taskDate,
-            endDate: taskDate,
-            teamId: itemType === 'team' ? item.id : null,
-            teamIds: itemType === 'team' ? [item.id] : [],
-            groupId: itemType === 'group' ? item.id : null,
-            groupIds: itemType === 'group' ? [item.id] : [],
-            assignedTeamIds: itemType === 'team' ? [item.id] : [],
-            assignedTeamName: itemType === 'team' ? (item.name || '') : '',
-            assignedGroupId: item.id,
-            assignedGroupIds: [String(item.id).toLowerCase()],
-            assignedGroupName: item.name || item.groupName || '',
-          };
-          break;
-        }
-        case 'checklists':
-          collectionName = 'checklists';
-          payload = {
-            name: entityForm.name?.trim(),
-            dueDate: entityForm.dueDate || today,
-            items: entityForm.items || [],
-            teamId: itemType === 'team' ? item.id : null,
-            teamName: itemType === 'team' ? (item.name || '') : '',
-            groupId: itemType === 'group' ? item.id : null,
-            groupName: itemType === 'group' ? (item.groupName || item.name || '') : '',
-            assignedGroupId: item.id,
-            assignedGroupIds: [String(item.id).toLowerCase()],
-          };
-          break;
-        case 'training':
-          collectionName = 'trainingPlans';
-          payload = {
-            name: entityForm.name?.trim(),
-            coachName: entityForm.coachName || '',
-            date: entityForm.date || today,
-            focusArea: entityForm.focusArea || '',
-            description: entityForm.description || '',
-            teamId: itemType === 'team' ? item.id : null,
-            groupId: itemType === 'group' ? item.id : null,
-            teamIds: itemType === 'team' ? [item.id] : [],
-            groupIds: itemType === 'group' ? [item.id] : [],
-            assignedGroupId: item.id,
-            assignedGroupIds: [String(item.id).toLowerCase()],
-          };
-          break;
-        case 'events': {
-          collectionName = 'events';
-          const eventDate = entityForm.startDate || entityForm.date || today;
-          payload = {
-            title: entityForm.title?.trim(),
-            description: entityForm.description || '',
-            date: eventDate,
-            startDate: eventDate,
-            endDate: entityForm.endDate || eventDate,
-            time: entityForm.time || '',
-            startTime: entityForm.time ? entityForm.time.split('-')[0].trim() : '',
-            endTime: entityForm.time && entityForm.time.includes('-') ? entityForm.time.split('-')[1].trim() : '',
-            isAllDay: !!entityForm.isAllDay,
-            location: entityForm.location || 'Clubhouse',
-            type: entityForm.type || 'training',
-            category: entityForm.type || 'training',
-            teamId: itemType === 'team' ? item.id : null,
-            teamIds: itemType === 'team' ? [item.id] : [],
-            groupId: itemType === 'group' ? item.id : null,
-            groupIds: itemType === 'group' ? [item.id] : [],
-            assignedGroupId: item.id,
-            assignedGroupIds: [String(item.id).toLowerCase()],
-            assignedGroupName: item.name || item.groupName || '',
-            groupType: itemType === 'team' ? 'Team' : 'Group',
-            openToAll: false,
-            rsvps: entityForm.rsvps || entityForm.rsvp || {},
-            rsvp: entityForm.rsvps || entityForm.rsvp || {},
-          };
-          break;
-        }
-        case 'shifts': {
-          collectionName = 'rosters';
-          const shiftDate = entityForm.date || entityForm.startDate || today;
-          payload = {
-            title: entityForm.title?.trim() || `${item.name || item.groupName} Shift Roster`,
-            date: shiftDate,
-            startDate: shiftDate,
-            endDate: entityForm.endDate || shiftDate,
-            groupId: itemType === 'group' ? item.id : null,
-            teamId: itemType === 'team' ? item.id : null,
-            assignedGroupId: item.id,
-            assignedGroupIds: [String(item.id).toLowerCase()],
-            shifts: (entityForm.shifts || []).map(s => ({
-              role: s.role || 'Duty',
-              startTime: s.startTime || '09:00',
-              endTime: s.endTime || '12:00',
-              assignedIds: [`group_${item.id}`, `team_${item.id}`, item.id, String(item.id).toLowerCase()],
-              filledByName: s.filledByName || '',
-            })),
-          };
-          break;
-        }
-        default:
-          break;
-      }
-
-      if (!collectionName) return;
-
-      if (activeItemModal.mode === 'edit' && activeItemModal.data?.id) {
-        await updateDoc(doc(db, 'clubs', selectedClubId, collectionName, activeItemModal.data.id), {
-          ...payload,
-          updatedAt: serverTimestamp(),
-        });
-        alert('Updated successfully!');
-      } else {
-        await addDoc(collection(db, 'clubs', selectedClubId, collectionName), {
-          ...payload,
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        });
-        alert('Created successfully!');
-      }
-
-      setActiveItemModal(null);
-      fetchTabData();
-    } catch (err) {
-      alert('Error saving: ' + err.message);
-    } finally {
-      setSavingEntity(false);
-    }
-  };
-
-  // Toggle task status
-  const handleToggleTaskStatus = async (task, e) => {
-    if (e) e.stopPropagation();
-    const newStatus = task.status === 'completed' ? 'pending' : 'completed';
-    try {
-      await updateDoc(doc(db, 'clubs', selectedClubId, 'tasks', task.id), {
-        status: newStatus,
-        updatedAt: serverTimestamp()
-      });
-      setTabData(prev => ({
-        ...prev,
-        tasks: prev.tasks.map(t => t.id === task.id ? { ...t, status: newStatus } : t)
-      }));
-    } catch (err) {
-      alert('Error updating status: ' + err.message);
-    }
-  };
-
   const unassignedMembers = allClubMembers
     .filter(m => !members.some(assigned => assigned.id === m.id))
     .map(m => ({ id: m.id, name: m.displayName || m.name || m.email || 'Unnamed Member' }));
 
-  // Column definitions for different tabs
-  const tabColumns = {
-    members: [
-      { header: 'Name', accessor: 'displayName', render: (val, r) => <strong>{val || r.name || r.email}</strong> },
-      { header: 'Role', accessor: 'role', render: val => <span className="badge badge-info">{val || 'Member'}</span> },
-      { header: 'Email', accessor: 'email' },
-    ],
-    posts: [
-      { 
-        header: 'Content', 
-        accessor: 'content',
-        render: (val) => <span className="text-truncate" style={{ fontWeight: 500, display: 'block', maxWidth: '300px' }}>{val || '—'}</span> 
-      },
-      { header: 'Visibility', accessor: 'visibility', render: val => <span className="badge badge-default">{val || 'Club-Only'}</span> },
-      { header: 'Author', accessor: 'authorName' },
-      { header: 'Date', accessor: (row) => row.createdAt?.toDate?.().toLocaleDateString() || '—' },
-    ],
-    matches: [
-      { header: 'Competition', accessor: 'competitionName', render: val => <strong>{val || 'League Match'}</strong> },
-      { header: 'Home Team', accessor: 'homeTeam' },
-      { header: 'Away Team', accessor: 'awayTeam' },
-      { header: 'Date', accessor: 'date' },
-      { header: 'Result / Status', accessor: 'status', render: (val, r) => r.score ? <span className="badge badge-info">{r.score}</span> : <span className="badge badge-warning">{val || 'Upcoming'}</span> },
-    ],
-    tasks: [
-      { 
-        header: 'Title', 
-        accessor: 'title', 
-        render: (val, r) => (
-          <div className="flex-center gap-sm">
-            <button 
-              className="btn-icon" 
-              onClick={(e) => handleToggleTaskStatus(r, e)} 
-              style={{ border: 'none', padding: '2px' }}
-              title="Click to toggle status"
-            >
-              <CheckCircle size={16} color={r.status === 'completed' ? 'var(--success)' : 'var(--text-secondary)'} />
-            </button>
-            <span style={{ textDecoration: r.status === 'completed' ? 'line-through' : 'none', fontWeight: 600 }}>{val}</span>
-          </div>
-        )
-      },
-      { 
-        header: 'Priority', 
-        accessor: 'priority', 
-        render: val => <span className={`badge ${val === 'high' ? 'badge-danger' : val === 'medium' ? 'badge-warning' : 'badge-default'}`}>{val || 'medium'}</span> 
-      },
-      { header: 'Due Date', accessor: 'dueDate' },
-      { 
-        header: 'Status', 
-        accessor: 'status', 
-        render: (val, r) => (
-          <span 
-            className={`badge ${val === 'completed' ? 'badge-success' : 'badge-warning'}`}
-            style={{ cursor: 'pointer' }}
-            onClick={(e) => handleToggleTaskStatus(r, e)}
-          >
-            {val || 'pending'}
-          </span>
-        ) 
-      },
-    ],
-    checklists: [
-      { header: 'Checklist Name', accessor: 'name', render: val => <strong>{val}</strong> },
-      { header: 'Due Date', accessor: 'dueDate' },
-      { 
-        header: 'Completed Items', 
-        accessor: 'items', 
-        render: (val) => {
-          const total = val?.length || 0;
-          const completed = val?.filter(i => i.completed).length || 0;
-          return (
-            <span className={`badge ${completed === total && total > 0 ? 'badge-success' : 'badge-info'}`}>
-              {completed} / {total} done
-            </span>
-          );
-        } 
-      },
-    ],
-    training: [
-      { header: 'Plan Name', accessor: 'name', render: val => <strong>{val}</strong> },
-      { header: 'Coach', accessor: 'coachName' },
-      { header: 'Date', accessor: 'date' },
-      { header: 'Focus Area', accessor: 'focusArea', render: val => <span className="badge badge-info">{val || 'Tactics'}</span> },
-    ],
-    events: [
-      { header: 'Event Title', accessor: 'title', render: val => <strong>{val}</strong> },
-      { header: 'Type', accessor: 'type', render: val => <span className="badge badge-info">{val || 'event'}</span> },
-      { header: 'Start Date', accessor: (row) => row.startDate || row.date },
-      { header: 'Location', accessor: 'location', render: val => val || 'Clubhouse' },
-    ],
-    shifts: [
-      { header: 'Roster Title', accessor: 'title', render: val => <strong>{val}</strong> },
-      { header: 'Scheduled Date', accessor: (row) => `${row.startDate || row.date || '—'}` },
-      { 
-        header: 'Shifts & Duties', 
-        accessor: 'shifts', 
-        render: (val) => {
-          const count = val?.length || 0;
-          return <span className="badge badge-default">{count} {count === 1 ? 'shift' : 'shifts'}</span>;
-        } 
-      },
-    ],
-  };
-
-  const currentColumns = tabColumns[activeTab] || [];
-  const currentData = activeTab === 'members' ? members : tabData[activeTab] || [];
-  
-  const actions = activeTab === 'members' ? [
-    {
-      label: 'Remove',
-      onClick: (row) => handleRemoveMember(row.id),
-      style: { color: 'var(--danger)' }
-    }
-  ] : [
-    {
-      label: 'View / Edit',
-      icon: <Edit2 size={15} />,
-      onClick: (row) => openEditItem(row)
-    },
-    {
-      label: 'Delete',
-      icon: <Trash2 size={15} />,
-      variant: 'danger',
-      onClick: (row) => handleDeleteItem(row)
-    }
-  ];
-
   return (
-    <div className="team-group-detail" style={{ animation: 'fadeIn 0.3s ease' }}>
-      {/* Page Header */}
-      <div className="page-header" style={{ marginBottom: 16 }}>
-        <div>
-          <button className="btn btn-outline" onClick={onClose} style={{ padding: '6px 12px', fontSize: '13px', marginBottom: 12 }}>
-            <ArrowLeft size={14} style={{ marginRight: 6 }} /> Back to {itemType === 'team' ? 'Teams' : 'Groups'}
-          </button>
-          <h1>{item.name || item.groupName}</h1>
-          <p>{itemType === 'team' ? 'Team' : 'Group'} Details and Management</p>
-        </div>
+    <div className="team-group-detail" style={{ animation: 'fadeIn 0.3s ease', fontFamily: 'Arial, sans-serif' }}>
+      
+      {/* Top Header Card matching Concepts */}
+      <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '16px', padding: '20px 24px 0 24px', marginBottom: '20px', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
+        <button 
+          className="btn btn-outline" 
+          onClick={onClose} 
+          style={{ padding: '6px 12px', fontSize: '12px', marginBottom: '14px', borderRadius: '8px' }}
+        >
+          <ArrowLeft size={14} style={{ marginRight: 6 }} /> Back to {itemType === 'team' ? 'Teams' : 'Groups'}
+        </button>
 
-        <div className="page-actions flex gap-sm">
-          {activeTab === 'members' ? (
-            <button className="btn btn-primary" onClick={() => setAddModalOpen(true)}>
-              <Plus size={16} /> Add Members
-            </button>
-          ) : (
-            <button className="btn btn-primary" onClick={openAddItem}>
-              <Plus size={16} /> Add {tabs.find(t => t.id === activeTab)?.label.replace(' / Updates', '').slice(0, -1) || 'Item'}
-            </button>
-          )}
-        </div>
-      </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '12px', marginBottom: '16px' }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+              <h1 style={{ margin: 0, fontSize: '24px', fontWeight: 800, color: '#0F172A' }}>
+                {item.name || item.groupName}
+              </h1>
+              <span style={{ fontSize: '11px', fontWeight: 800, background: '#1E3A8A', color: '#FFFFFF', padding: '3px 10px', borderRadius: '999px', letterSpacing: '0.05em' }}>
+                ADMIN SPACE
+              </span>
+              <span style={{ fontSize: '11px', fontWeight: 600, background: '#0D9488', color: '#FFFFFF', padding: '3px 10px', borderRadius: '999px' }}>
+                Concept • Example data
+              </span>
+            </div>
+            <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: '#64748B' }}>
+              {item.season || '2027 season'} • {item.ageGroup || item.division || 'Under 17'}
+            </p>
+          </div>
 
-      {/* Tabs navigation */}
-      <div className="tabs-container mb-md">
-        <div className="tabs" style={{ overflowX: 'auto', whiteSpace: 'nowrap', paddingBottom: '4px' }}>
-          {tabs.map(tab => (
+          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+            <button className="btn btn-outline" onClick={() => setAddModalOpen(true)} style={{ borderRadius: '10px', fontSize: '13px' }}>
+              <Users size={15} style={{ marginRight: 6 }} /> Manage Members
+            </button>
             <button 
-              key={tab.id}
-              className={`tab ${activeTab === tab.id ? 'active' : ''}`} 
-              onClick={() => setActiveTab(tab.id)}
+              className="btn btn-primary" 
+              onClick={() => setActiveTab('posts')} 
+              style={{ background: DESIGN_TOKENS.primaryTeal, borderColor: DESIGN_TOKENS.primaryTeal, borderRadius: '10px', fontSize: '13px' }}
             >
-              <span style={{ marginRight: 6, display: 'inline-flex' }}>{tab.icon}</span> {tab.label}
+              Post Update
             </button>
-          ))}
+            {itemType === 'team' && (
+              <button 
+                className="btn btn-outline" 
+                onClick={() => { setBulkCancelModalOpen(true); handlePreviewBulkCancel(); }}
+                style={{ borderColor: '#FCA5A5', color: '#DC2626', borderRadius: '10px', fontSize: '13px' }}
+                title="Club admin tool: bulk cancel training sessions for weather/ground closure"
+              >
+                <AlertTriangle size={15} style={{ marginRight: 6 }} /> Bulk Cancel Training
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Navigation Tabs */}
+        <div style={{ display: 'flex', gap: '24px', borderBottom: '1px solid #E2E8F0', overflowX: 'auto', whiteSpace: 'nowrap' }}>
+          {tabs.map(tab => {
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  borderBottom: isActive ? `2px solid ${DESIGN_TOKENS.primaryTeal}` : '2px solid transparent',
+                  padding: '0 4px 12px 4px',
+                  fontSize: '13px',
+                  fontWeight: isActive ? 700 : 500,
+                  color: isActive ? DESIGN_TOKENS.primaryTeal : '#64748B',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}
+              >
+                {tab.label}
+              </button>
+            );
+          })}
         </div>
       </div>
 
-      {/* Main Tab Content */}
-      <div className="detail-content">
-        <div className="card glass-card">
-          <div className="card-header" style={{ padding: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <h3 style={{ margin: 0 }}>
-              {activeTab === 'members' 
-                ? `${members.length} Assigned Members` 
-                : `${currentData.length} Linked ${tabs.find(t => t.id === activeTab)?.label}`
-              }
-            </h3>
-            <div className="flex gap-sm">
+      {/* ─── TAB: OVERVIEW ───────────────────────────────────────────────────── */}
+      {activeTab === 'overview' && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
+          <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '16px', padding: '20px' }}>
+            <h3 style={{ margin: '0 0 10px 0', fontSize: '15px', fontWeight: 800 }}>Team Roster Overview</h3>
+            <div style={{ fontSize: '28px', fontWeight: 800, color: DESIGN_TOKENS.primaryTeal }}>
+              {members.length}
+            </div>
+            <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: '#64748B' }}>
+              Enrolled members and coaching staff
+            </p>
+          </div>
+
+          <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '16px', padding: '20px' }}>
+            <h3 style={{ margin: '0 0 10px 0', fontSize: '15px', fontWeight: 800 }}>Published Updates</h3>
+            <div style={{ fontSize: '28px', fontWeight: 800, color: '#3B82F6' }}>
+              {tabData.posts.filter(p => p.status !== 'draft').length}
+            </div>
+            <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: '#64748B' }}>
+              Announcements visible to players and parents
+            </p>
+          </div>
+
+          <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '16px', padding: '20px' }}>
+            <h3 style={{ margin: '0 0 10px 0', fontSize: '15px', fontWeight: 800 }}>Scheduled Activities</h3>
+            <div style={{ fontSize: '28px', fontWeight: 800, color: '#10B981' }}>
+              {combinedActivities.filter(a => a.status !== 'cancelled').length}
+            </div>
+            <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: '#64748B' }}>
+              Upcoming matches, training sessions & events
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* ─── TAB: MEMBERS & STAFF ────────────────────────────────────────────── */}
+      {activeTab === 'members' && (
+        <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '16px', overflow: 'hidden' }}>
+          <div style={{ padding: '16px 20px', borderBottom: '1px solid #E2E8F0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 800 }}>Members & Coaching Staff ({members.length})</h3>
+            <button className="btn btn-primary btn-sm" onClick={() => setAddModalOpen(true)}>
+              <Plus size={14} /> Add Member
+            </button>
+          </div>
+          <table style={{ width: '100%', borderCollapse: 'collapse', margin: 0 }}>
+            <thead>
+              <tr style={{ background: '#F8FAFC', borderBottom: '1px solid #E2E8F0', textAlign: 'left', fontSize: '11px', textTransform: 'uppercase', color: '#64748B' }}>
+                <th style={{ padding: '12px 18px' }}>Member Name</th>
+                <th style={{ padding: '12px 14px' }}>Club Roles</th>
+                <th style={{ padding: '12px 14px' }}>Email</th>
+                <th style={{ padding: '12px 18px', textAlign: 'right' }}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {members.length === 0 ? (
+                <tr><td colSpan={4} style={{ padding: '30px', textAlign: 'center', color: '#94A3B8' }}>No members assigned.</td></tr>
+              ) : members.map(m => (
+                <tr key={m.id} style={{ borderBottom: '1px solid #F1F5F9' }}>
+                  <td style={{ padding: '12px 18px', fontWeight: 700, fontSize: '13px', color: '#0F172A' }}>
+                    {m.displayName || m.name}
+                  </td>
+                  <td style={{ padding: '12px 14px', fontSize: '12px', color: '#64748B' }}>
+                    {(m.roles || [m.role] || ['Member']).join(', ')}
+                  </td>
+                  <td style={{ padding: '12px 14px', fontSize: '12px', color: '#64748B' }}>
+                    {m.email || '—'}
+                  </td>
+                  <td style={{ padding: '12px 18px', textAlign: 'right' }}>
+                    <button
+                      onClick={async () => {
+                        if (!window.confirm(`Remove ${m.displayName || m.name} from this team?`)) return;
+                        await updateDoc(doc(db, 'clubs', selectedClubId, 'members', m.id), {
+                          teamIds: arrayRemove(item.id)
+                        });
+                        fetchMembers();
+                      }}
+                      className="btn-icon danger"
+                      title="Remove from team"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* ─── TAB: MATCHES & EVENTS (IMAGE 3) ─────────────────────────────────── */}
+      {activeTab === 'matches' && (
+        <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '16px', overflow: 'hidden' }}>
+          <div style={{ padding: '16px 20px', borderBottom: '1px solid #E2E8F0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              <h3 style={{ margin: '0 0 2px 0', fontSize: '15px', fontWeight: 800 }}>
+                Matches, Training & Team Events
+              </h3>
+              <span style={{ fontSize: '12px', color: '#64748B' }}>
+                One linked event record. Updates also appear in My Teams and Calendar.
+              </span>
+            </div>
+            <div style={{ display: 'flex', gap: '8px' }}>
               <button 
-                className="btn btn-outline btn-sm" 
-                onClick={activeTab === 'members' ? fetchMembers : fetchTabData}
-                title="Refresh tab data"
+                className="btn btn-primary" 
+                onClick={() => {
+                  setEntityForm({ title: '', type: 'match', date: new Date().toISOString().slice(0, 10), location: 'Main Oval' });
+                  setActiveItemModal({ mode: 'add', tab: 'events' });
+                }}
+                style={{ background: DESIGN_TOKENS.primaryTeal, borderColor: DESIGN_TOKENS.primaryTeal, fontSize: '13px' }}
               >
-                <RefreshCw size={14} className={loadingTab ? 'animate-spin' : ''} />
+                <Plus size={15} style={{ marginRight: 4 }} /> Add event
               </button>
             </div>
           </div>
 
-          <DataTable 
-            columns={currentColumns}
-            data={currentData}
-            loading={activeTab === 'members' ? loading : loadingTab}
-            actions={actions}
-            onRowClick={(row) => {
-              if (activeTab !== 'members') openEditItem(row);
-            }}
-            emptyMessage={`No ${tabs.find(t => t.id === activeTab)?.label || 'items'} linked to this ${itemType}. Click '+ Add' to create one.`}
-          />
+          <table style={{ width: '100%', borderCollapse: 'collapse', margin: 0 }}>
+            <thead>
+              <tr style={{ background: '#F8FAFC', borderBottom: '1px solid #E2E8F0', textAlign: 'left', fontSize: '11px', textTransform: 'uppercase', color: '#64748B' }}>
+                <th style={{ padding: '12px 18px' }}>Activity</th>
+                <th style={{ padding: '12px 14px' }}>Type</th>
+                <th style={{ padding: '12px 14px' }}>Date & time</th>
+                <th style={{ padding: '12px 14px' }}>Venue</th>
+                <th style={{ padding: '12px 14px' }}>Visibility</th>
+                <th style={{ padding: '12px 14px' }}>Responses</th>
+                <th style={{ padding: '12px 18px', textAlign: 'right' }}>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {combinedActivities.length === 0 ? (
+                <tr><td colSpan={7} style={{ padding: '30px', textAlign: 'center', color: '#94A3B8' }}>No matches or training scheduled.</td></tr>
+              ) : combinedActivities.map(act => (
+                <tr key={act.id} style={{ borderBottom: '1px solid #F1F5F9' }}>
+                  <td style={{ padding: '12px 18px', fontWeight: 700, fontSize: '13px', color: '#0F172A' }}>
+                    {act.activity}
+                    {act.cancellationReason && (
+                      <div style={{ fontSize: '11px', color: '#DC2626', fontWeight: 500, marginTop: '2px' }}>
+                        Reason: {act.cancellationReason}
+                      </div>
+                    )}
+                  </td>
+                  <td style={{ padding: '12px 14px', fontSize: '12px', color: '#64748B' }}>
+                    {act.type}
+                  </td>
+                  <td style={{ padding: '12px 14px', fontSize: '12px', color: '#334155' }}>
+                    {act.dateTime}
+                  </td>
+                  <td style={{ padding: '12px 14px', fontSize: '12px', color: '#64748B' }}>
+                    {act.venue}
+                  </td>
+                  <td style={{ padding: '12px 14px' }}>
+                    {act.status === 'cancelled' ? (
+                      <span style={{ fontSize: '11px', fontWeight: 700, background: '#FEE2E2', color: '#DC2626', padding: '2px 8px', borderRadius: '999px' }}>
+                        Cancelled
+                      </span>
+                    ) : act.visibility === 'Draft' ? (
+                      <span style={{ fontSize: '11px', fontWeight: 600, background: '#F1F5F9', color: '#475569', padding: '2px 8px', borderRadius: '999px' }}>
+                        Draft
+                      </span>
+                    ) : (
+                      <span style={{ fontSize: '11px', fontWeight: 700, background: '#DCFCE7', color: '#16A34A', padding: '2px 8px', borderRadius: '999px' }}>
+                        Published
+                      </span>
+                    )}
+                  </td>
+                  <td style={{ padding: '12px 14px', fontSize: '12px', color: '#64748B' }}>
+                    {act.responses}
+                  </td>
+                  <td style={{ padding: '12px 18px', textAlign: 'right' }}>
+                    <div style={{ display: 'inline-flex', gap: '8px' }}>
+                      {act.isSession && act.status !== 'cancelled' && (
+                        <button
+                          onClick={() => setCancelSessionModal(act.raw)}
+                          className="btn btn-outline"
+                          style={{ padding: '4px 10px', fontSize: '11px', color: '#DC2626', borderColor: '#FCA5A5' }}
+                        >
+                          Cancel
+                        </button>
+                      )}
+                      {act.isSession && act.status === 'cancelled' && (
+                        <button
+                          onClick={() => handleReinstate(act.raw)}
+                          className="btn btn-outline"
+                          style={{ padding: '4px 10px', fontSize: '11px', color: '#16A34A', borderColor: '#BBF7D0' }}
+                        >
+                          Reinstate
+                        </button>
+                      )}
+                      <button
+                        onClick={() => {
+                          setEntityForm({ ...act.raw });
+                          setActiveItemModal({ mode: 'edit', tab: act.isSession ? 'training' : 'events', data: act.raw });
+                        }}
+                        className="btn btn-outline"
+                        style={{ padding: '4px 10px', fontSize: '11px' }}
+                      >
+                        Manage event
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
-      </div>
+      )}
 
-      {/* Add Members Modal */}
+      {/* ─── TAB: DUTIES & TASKS (IMAGE 2) ───────────────────────────────────── */}
+      {activeTab === 'tasks' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+          
+          {/* Top Counters */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '14px' }}>
+            <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '14px', padding: '14px 18px' }}>
+              <span style={{ fontSize: '12px', color: '#64748B' }}>Open duties</span>
+              <div style={{ fontSize: '24px', fontWeight: 800, color: '#F59E0B', marginTop: '2px' }}>
+                {dutyMetrics.open}
+              </div>
+            </div>
+
+            <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '14px', padding: '14px 18px' }}>
+              <span style={{ fontSize: '12px', color: '#64748B' }}>Assigned duties</span>
+              <div style={{ fontSize: '24px', fontWeight: 800, color: '#10B981', marginTop: '2px' }}>
+                {dutyMetrics.assigned}
+              </div>
+            </div>
+
+            <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '14px', padding: '14px 18px' }}>
+              <span style={{ fontSize: '12px', color: '#64748B' }}>Event tasks</span>
+              <div style={{ fontSize: '24px', fontWeight: 800, color: '#3B82F6', marginTop: '2px' }}>
+                {dutyMetrics.eventTasks}
+              </div>
+            </div>
+          </div>
+
+          {/* Subtabs: Upcoming / Completed */}
+          <div style={{ display: 'flex', gap: '10px' }}>
+            <button
+              onClick={() => setDutiesSubTab('upcoming')}
+              style={{
+                padding: '6px 14px',
+                borderRadius: '8px',
+                border: '1px solid #E2E8F0',
+                background: dutiesSubTab === 'upcoming' ? '#0F172A' : '#FFFFFF',
+                color: dutiesSubTab === 'upcoming' ? '#FFFFFF' : '#64748B',
+                fontSize: '12px',
+                fontWeight: 700,
+                cursor: 'pointer'
+              }}
+            >
+              Upcoming
+            </button>
+            <button
+              onClick={() => setDutiesSubTab('completed')}
+              style={{
+                padding: '6px 14px',
+                borderRadius: '8px',
+                border: '1px solid #E2E8F0',
+                background: dutiesSubTab === 'completed' ? '#0F172A' : '#FFFFFF',
+                color: dutiesSubTab === 'completed' ? '#FFFFFF' : '#64748B',
+                fontSize: '12px',
+                fontWeight: 700,
+                cursor: 'pointer'
+              }}
+            >
+              Completed
+            </button>
+          </div>
+
+          {/* Duties Table */}
+          <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '16px', overflow: 'hidden' }}>
+            <div style={{ padding: '16px 20px', borderBottom: '1px solid #E2E8F0' }}>
+              <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 800 }}>
+                Duties • Matchday Volunteer Roster
+              </h3>
+            </div>
+
+            <table style={{ width: '100%', borderCollapse: 'collapse', margin: 0 }}>
+              <thead>
+                <tr style={{ background: '#F8FAFC', borderBottom: '1px solid #E2E8F0', textAlign: 'left', fontSize: '11px', textTransform: 'uppercase', color: '#64748B' }}>
+                  <th style={{ padding: '12px 18px' }}>Duty</th>
+                  <th style={{ padding: '12px 14px' }}>Time</th>
+                  <th style={{ padding: '12px 14px' }}>Location</th>
+                  <th style={{ padding: '12px 14px' }}>Owner</th>
+                  <th style={{ padding: '12px 14px' }}>Status</th>
+                  <th style={{ padding: '12px 18px', textAlign: 'right' }}>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {tabData.tasks.length === 0 ? (
+                  <tr><td colSpan={6} style={{ padding: '30px', textAlign: 'center', color: '#94A3B8' }}>No duties currently listed.</td></tr>
+                ) : tabData.tasks.map(d => {
+                  const isAssigned = !!d.assignedTo;
+                  return (
+                    <tr key={d.id} style={{ borderBottom: '1px solid #F1F5F9' }}>
+                      <td style={{ padding: '12px 18px', fontWeight: 700, fontSize: '13px', color: '#0F172A' }}>
+                        {d.title || d.name}
+                      </td>
+                      <td style={{ padding: '12px 14px', fontSize: '12px', color: '#334155' }}>
+                        {d.time || d.timeSlot || '7:30–8:00 am'}
+                      </td>
+                      <td style={{ padding: '12px 14px', fontSize: '12px', color: '#64748B' }}>
+                        {d.location || 'Main Oval'}
+                      </td>
+                      <td style={{ padding: '12px 14px', fontSize: '12px', color: '#0F172A' }}>
+                        {d.assignedToName || d.assignedName || (isAssigned ? 'Example Parent' : 'Unassigned')}
+                      </td>
+                      <td style={{ padding: '12px 14px' }}>
+                        {isAssigned ? (
+                          <span style={{ fontSize: '11px', fontWeight: 700, color: '#0D9488', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#0D9488' }} /> Assigned
+                          </span>
+                        ) : (
+                          <span style={{ fontSize: '11px', fontWeight: 700, color: '#F59E0B', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#F59E0B' }} /> Unfilled
+                          </span>
+                        )}
+                      </td>
+                      <td style={{ padding: '12px 18px', textAlign: 'right' }}>
+                        <button
+                          onClick={() => {
+                            setEntityForm({ ...d });
+                            setActiveItemModal({ mode: 'edit', tab: 'tasks', data: d });
+                          }}
+                          className="btn btn-outline"
+                          style={{ padding: '4px 10px', fontSize: '11px' }}
+                        >
+                          {isAssigned ? 'Reassign' : 'Assign'}
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Event Tasks Card */}
+          <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '16px', padding: '20px' }}>
+            <h3 style={{ margin: '0 0 12px 0', fontSize: '15px', fontWeight: 800 }}>Event tasks</h3>
+            <div style={{ border: '1px solid #E2E8F0', borderRadius: '12px', padding: '14px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#FAFAFA' }}>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: '13px', color: '#0F172A' }}>Bring equipment bag</div>
+                <div style={{ fontSize: '11px', color: '#64748B', marginTop: '2px' }}>
+                  Source: {item.name} vs Norths Juniors • Example Parent via {item.name}
+                </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                <span style={{ fontSize: '12px', color: '#64748B', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#94A3B8' }} /> Not started
+                </span>
+                <button className="btn btn-outline" style={{ fontSize: '11px', padding: '4px 10px' }} onClick={() => setActiveTab('matches')}>
+                  View event
+                </button>
+              </div>
+            </div>
+            <div style={{ fontSize: '11px', color: '#94A3B8', marginTop: '8px' }}>
+              Edit event checklist items on their event.
+            </div>
+          </div>
+
+        </div>
+      )}
+
+      {/* ─── TAB: UPDATES (IMAGE 1) ─────────────────────────────────────────── */}
+      {activeTab === 'posts' && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '24px', alignItems: 'start' }}>
+          
+          {/* Left Column: Updates List */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            {/* Subtabs: Published / Drafts */}
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button
+                onClick={() => setUpdatesSubTab('published')}
+                style={{
+                  padding: '6px 14px',
+                  borderRadius: '8px',
+                  border: '1px solid #E2E8F0',
+                  background: updatesSubTab === 'published' ? '#0F172A' : '#FFFFFF',
+                  color: updatesSubTab === 'published' ? '#FFFFFF' : '#64748B',
+                  fontSize: '12px',
+                  fontWeight: 700,
+                  cursor: 'pointer'
+                }}
+              >
+                Published
+              </button>
+              <button
+                onClick={() => setUpdatesSubTab('drafts')}
+                style={{
+                  padding: '6px 14px',
+                  borderRadius: '8px',
+                  border: '1px solid #E2E8F0',
+                  background: updatesSubTab === 'drafts' ? '#0F172A' : '#FFFFFF',
+                  color: updatesSubTab === 'drafts' ? '#FFFFFF' : '#64748B',
+                  fontSize: '12px',
+                  fontWeight: 700,
+                  cursor: 'pointer'
+                }}
+              >
+                Drafts
+              </button>
+            </div>
+
+            {/* List of update cards */}
+            {tabData.posts
+              .filter(p => updatesSubTab === 'published' ? p.status !== 'draft' : p.status === 'draft')
+              .map(p => (
+                <div
+                  key={p.id}
+                  style={{
+                    background: '#FFFFFF',
+                    border: '1px solid #E2E8F0',
+                    borderRadius: '16px',
+                    padding: '18px 20px',
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.02)'
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+                    <h4 style={{ margin: 0, fontSize: '15px', fontWeight: 800, color: '#0F172A' }}>
+                      {p.title || 'Team update'}
+                    </h4>
+                    <button
+                      onClick={() => handleTogglePin(p)}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: p.pinned ? '#0F172A' : '#94A3B8' }}
+                      title={p.pinned ? 'Unpin' : 'Pin to top'}
+                    >
+                      <Pin size={16} fill={p.pinned ? '#0F172A' : 'none'} />
+                    </button>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '6px', marginBottom: '10px' }}>
+                    {p.pinned && (
+                      <span style={{ fontSize: '10px', fontWeight: 700, background: '#F1F5F9', color: '#475569', padding: '2px 8px', borderRadius: '4px' }}>
+                        Pinned
+                      </span>
+                    )}
+                    <span style={{ fontSize: '10px', fontWeight: 700, background: '#DCFCE7', color: '#16A34A', padding: '2px 8px', borderRadius: '4px' }}>
+                      {p.status === 'draft' ? 'Draft' : 'Published'}
+                    </span>
+                  </div>
+
+                  <p style={{ margin: '0 0 10px 0', fontSize: '13px', lineHeight: 1.5, color: '#334155' }}>
+                    {p.content || p.body}
+                  </p>
+
+                  <div style={{ fontSize: '11px', color: '#64748B', marginBottom: '12px' }}>
+                    {p.authorName || 'Coach'} • {p.createdAt?.toDate ? p.createdAt.toDate().toLocaleDateString() : 'Recent'}
+                    <div style={{ marginTop: '2px' }}>
+                      Audience: {p.audience || `${item.name} members and authorised guardians`}
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '12px' }}>
+                    <button
+                      onClick={() => {
+                        setEntityForm({ ...p });
+                        setActiveItemModal({ mode: 'edit', tab: 'posts', data: p });
+                      }}
+                      style={{ background: 'none', border: 'none', padding: 0, color: '#0D9488', fontWeight: 700, fontSize: '12px', cursor: 'pointer' }}
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => handleTogglePin(p)}
+                      style={{ background: 'none', border: 'none', padding: 0, color: '#64748B', fontSize: '12px', cursor: 'pointer' }}
+                    >
+                      {p.pinned ? 'Unpin' : 'Pin'}
+                    </button>
+                  </div>
+                </div>
+              ))}
+          </div>
+
+          {/* Right Column: "New update" Form (Image 1) */}
+          <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '16px', padding: '20px 24px', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
+            <h3 style={{ margin: '0 0 16px 0', fontSize: '16px', fontWeight: 800, color: '#0F172A' }}>
+              New update
+            </h3>
+
+            <div className="form-group">
+              <label style={{ fontSize: '12px', fontWeight: 700 }}>Title</label>
+              <input
+                className="form-control"
+                placeholder="e.g. Training reminder"
+                value={newUpdateForm.title}
+                onChange={e => setNewUpdateForm({ ...newUpdateForm, title: e.target.value })}
+              />
+            </div>
+
+            <div className="form-group">
+              <label style={{ fontSize: '12px', fontWeight: 700 }}>Body</label>
+              <textarea
+                className="form-control"
+                rows={4}
+                placeholder="Please bring water and arrive 10 minutes early."
+                value={newUpdateForm.body}
+                onChange={e => setNewUpdateForm({ ...newUpdateForm, body: e.target.value })}
+              />
+            </div>
+
+            <div className="form-group">
+              <label style={{ fontSize: '12px', fontWeight: 700 }}>Audience</label>
+              <select
+                className="form-control"
+                value={newUpdateForm.audience}
+                onChange={e => setNewUpdateForm({ ...newUpdateForm, audience: e.target.value })}
+              >
+                <option value={`${item.name} — members and authorised guardians`}>
+                  {item.name} — members and authorised guardians
+                </option>
+                <option value={`${item.name} Staff Only`}>
+                  {item.name} Staff Only
+                </option>
+                <option value="Club-Wide">Club-Wide</option>
+              </select>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '20px' }}>
+              <input
+                type="checkbox"
+                id="notifyAudience"
+                checked={newUpdateForm.notifyAudience}
+                onChange={e => setNewUpdateForm({ ...newUpdateForm, notifyAudience: e.target.checked })}
+              />
+              <label htmlFor="notifyAudience" style={{ fontSize: '13px', fontWeight: 600, color: '#0F172A', cursor: 'pointer' }}>
+                Notify audience
+              </label>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+              <button
+                className="btn btn-outline"
+                onClick={() => handlePublishUpdate(true)}
+                disabled={postingUpdate}
+                style={{ borderRadius: '10px' }}
+              >
+                Save draft
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={() => handlePublishUpdate(false)}
+                disabled={postingUpdate}
+                style={{ background: DESIGN_TOKENS.primaryTeal, borderColor: DESIGN_TOKENS.primaryTeal, borderRadius: '10px' }}
+              >
+                Publish
+              </button>
+            </div>
+          </div>
+
+        </div>
+      )}
+
+      {/* ─── MODAL: BULK TRAINING CANCELLATION (ADMIN TOOL) ──────────────────── */}
+      <Modal
+        open={bulkCancelModalOpen}
+        onClose={() => setBulkCancelModalOpen(false)}
+        title="Bulk Training Cancellation"
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          <p style={{ margin: 0, fontSize: '13px', color: '#334155' }}>
+            Cancel multiple scheduled training sessions for <strong>{item.name}</strong> due to adverse weather or ground closures.
+          </p>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            <div className="form-group">
+              <label style={{ fontSize: '12px', fontWeight: 700 }}>Window Start</label>
+              <input
+                type="date"
+                className="form-control"
+                value={bulkCancelForm.startDate}
+                onChange={e => {
+                  setBulkCancelForm({ ...bulkCancelForm, startDate: e.target.value });
+                  setTimeout(handlePreviewBulkCancel, 50);
+                }}
+              />
+            </div>
+
+            <div className="form-group">
+              <label style={{ fontSize: '12px', fontWeight: 700 }}>Window End</label>
+              <input
+                type="date"
+                className="form-control"
+                value={bulkCancelForm.endDate}
+                onChange={e => {
+                  setBulkCancelForm({ ...bulkCancelForm, endDate: e.target.value });
+                  setTimeout(handlePreviewBulkCancel, 50);
+                }}
+              />
+            </div>
+          </div>
+
+          <div className="form-group">
+            <label style={{ fontSize: '12px', fontWeight: 700 }}>Venue Filter (Optional)</label>
+            <input
+              className="form-control"
+              placeholder="e.g. Main Oval (leave blank for all venues)"
+              value={bulkCancelForm.venue}
+              onChange={e => {
+                setBulkCancelForm({ ...bulkCancelForm, venue: e.target.value });
+                setTimeout(handlePreviewBulkCancel, 50);
+              }}
+            />
+          </div>
+
+          <div className="form-group">
+            <label style={{ fontSize: '12px', fontWeight: 700 }}>Cancellation Reason (Required)</label>
+            <textarea
+              className="form-control"
+              rows={2}
+              placeholder="e.g. Severe storm warning / council ground closure..."
+              value={bulkCancelForm.reason}
+              onChange={e => setBulkCancelForm({ ...bulkCancelForm, reason: e.target.value })}
+            />
+          </div>
+
+          {/* Affected Session Preview */}
+          <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '12px', padding: '12px' }}>
+            <div style={{ fontWeight: 700, fontSize: '12px', color: '#0F172A', marginBottom: '6px' }}>
+              Preview Affected Occurrences ({bulkPreviewSessions.length})
+            </div>
+            {bulkPreviewSessions.length === 0 ? (
+              <div style={{ fontSize: '12px', color: '#94A3B8', fontStyle: 'italic' }}>
+                No active training occurrences found in this window. Matches and general events are excluded.
+              </div>
+            ) : (
+              <div style={{ maxHeight: '140px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                {bulkPreviewSessions.map(s => (
+                  <div key={s.id} style={{ fontSize: '11px', color: '#334155', display: 'flex', justifyContent: 'space-between' }}>
+                    <span>{s.scheduledAt?.replace('T', ' ')}</span>
+                    <span style={{ color: '#64748B' }}>{s.location || 'Main oval'}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="form-actions">
+            <button className="btn btn-outline" onClick={() => setBulkCancelModalOpen(false)} disabled={executingBulkCancel}>
+              Cancel
+            </button>
+            <button
+              className="btn btn-danger"
+              onClick={handleExecuteBulkCancel}
+              disabled={executingBulkCancel || bulkPreviewSessions.length === 0 || !bulkCancelForm.reason.trim()}
+              style={{ background: '#DC2626', color: '#fff', border: 'none' }}
+            >
+              {executingBulkCancel ? 'Processing...' : `Confirm Cancellation (${bulkPreviewSessions.length})`}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* ─── MODAL: CANCEL SESSION (SINGLE WITH REASON) ──────────────────────── */}
+      <Modal
+        open={!!cancelSessionModal}
+        onClose={() => setCancelSessionModal(null)}
+        title="Cancel Training Session"
+      >
+        {cancelSessionModal && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <p style={{ margin: 0, fontSize: '13px', color: '#334155' }}>
+              Cancel training on <strong>{cancelSessionModal.scheduledAt}</strong>?
+            </p>
+
+            <div className="form-group">
+              <label style={{ fontSize: '12px', fontWeight: 700 }}>Reason for cancellation</label>
+              <textarea
+                className="form-control"
+                rows={3}
+                placeholder="e.g. Ground waterlogged / coach illness..."
+                value={cancelReason}
+                onChange={e => setCancelReason(e.target.value)}
+              />
+            </div>
+
+            <div className="form-actions">
+              <button className="btn btn-outline" onClick={() => setCancelSessionModal(null)} disabled={cancellingSession}>
+                Back
+              </button>
+              <button
+                className="btn btn-danger"
+                onClick={handleCancelSession}
+                disabled={cancellingSession || !cancelReason.trim()}
+                style={{ background: '#DC2626', color: '#fff', border: 'none' }}
+              >
+                {cancellingSession ? 'Cancelling...' : 'Confirm'}
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* ─── MODAL: ADD MEMBERS ──────────────────────────────────────────────── */}
       <Modal open={addModalOpen} onClose={() => { setAddModalOpen(false); setSelectedNewMembers([]); }} title={`Add Members to ${itemType === 'team' ? 'Team' : 'Group'}`}>
         <div className="form-group">
           <label>Select Members</label>
@@ -717,530 +1226,6 @@ export default function TeamGroupDetail({ item, itemType, selectedClubId, onClos
         </div>
       </Modal>
 
-      {/* Edit / View Modal for Specific Tab Item */}
-      <Modal 
-        open={!!activeItemModal} 
-        onClose={() => setActiveItemModal(null)} 
-        title={`${activeItemModal?.mode === 'add' ? 'Add' : 'Edit'} ${tabs.find(t => t.id === activeTab)?.label.replace(' / Updates', '') || 'Item'}`}
-        wide={activeTab === 'checklists' || activeTab === 'tasks' || activeTab === 'events' || activeTab === 'shifts'}
-      >
-        {activeItemModal && (
-          <form onSubmit={handleSaveEntity}>
-            
-            {/* POSTS TAB */}
-            {activeTab === 'posts' && (
-              <>
-                <div className="form-group">
-                  <label>Post Content <span className="text-danger">*</span></label>
-                  <textarea 
-                    rows={4} 
-                    className="form-control" 
-                    value={entityForm.content || ''} 
-                    onChange={e => setEntityForm({ ...entityForm, content: e.target.value })} 
-                    placeholder="Write an announcement or update for this team/group..."
-                    required 
-                  />
-                </div>
-                <div className="form-row">
-                  <div className="form-group">
-                    <label>Visibility</label>
-                    <select 
-                      className="form-control" 
-                      value={entityForm.visibility || 'Club-Only'} 
-                      onChange={e => setEntityForm({ ...entityForm, visibility: e.target.value })}
-                    >
-                      <option value="Club-Only">Club-Only</option>
-                      <option value="Team-Only">Team/Group Only</option>
-                      <option value="Public">Public</option>
-                      <option value="Network">Network</option>
-                    </select>
-                  </div>
-                  <div className="form-group">
-                    <label>Author Name</label>
-                    <input 
-                      type="text" 
-                      className="form-control" 
-                      value={entityForm.authorName || 'Coach / Admin'} 
-                      onChange={e => setEntityForm({ ...entityForm, authorName: e.target.value })} 
-                    />
-                  </div>
-                </div>
-              </>
-            )}
-
-            {/* MATCHES TAB */}
-            {activeTab === 'matches' && (
-              <>
-                <div className="form-group">
-                  <label>Competition Name</label>
-                  <input 
-                    type="text" 
-                    className="form-control" 
-                    value={entityForm.competitionName || ''} 
-                    onChange={e => setEntityForm({ ...entityForm, competitionName: e.target.value })} 
-                    placeholder="e.g. Junior Regional League" 
-                  />
-                </div>
-                <div className="form-row">
-                  <div className="form-group">
-                    <label>Home Team <span className="text-danger">*</span></label>
-                    <input 
-                      type="text" 
-                      className="form-control" 
-                      value={entityForm.homeTeam || ''} 
-                      onChange={e => setEntityForm({ ...entityForm, homeTeam: e.target.value })} 
-                      required 
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label>Away Team <span className="text-danger">*</span></label>
-                    <input 
-                      type="text" 
-                      className="form-control" 
-                      value={entityForm.awayTeam || ''} 
-                      onChange={e => setEntityForm({ ...entityForm, awayTeam: e.target.value })} 
-                      required 
-                    />
-                  </div>
-                </div>
-                <div className="form-row">
-                  <div className="form-group">
-                    <label>Match Date</label>
-                    <input 
-                      type="date" 
-                      className="form-control" 
-                      value={entityForm.date || ''} 
-                      onChange={e => setEntityForm({ ...entityForm, date: e.target.value })} 
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label>Venue / Ground</label>
-                    <input 
-                      type="text" 
-                      className="form-control" 
-                      value={entityForm.venue || ''} 
-                      onChange={e => setEntityForm({ ...entityForm, venue: e.target.value })} 
-                    />
-                  </div>
-                </div>
-                <div className="form-row">
-                  <div className="form-group">
-                    <label>Score / Result (Optional)</label>
-                    <input 
-                      type="text" 
-                      className="form-control" 
-                      placeholder="e.g. 3 - 1" 
-                      value={entityForm.score || ''} 
-                      onChange={e => setEntityForm({ ...entityForm, score: e.target.value })} 
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label>Status</label>
-                    <select 
-                      className="form-control" 
-                      value={entityForm.status || 'Upcoming'} 
-                      onChange={e => setEntityForm({ ...entityForm, status: e.target.value })}
-                    >
-                      <option value="Upcoming">Upcoming</option>
-                      <option value="In Progress">In Progress</option>
-                      <option value="Completed">Completed</option>
-                      <option value="Postponed">Postponed</option>
-                    </select>
-                  </div>
-                </div>
-              </>
-            )}
-
-            {/* TASKS TAB */}
-            {activeTab === 'tasks' && (
-              <>
-                <div className="form-group">
-                  <label>Task Title <span className="text-danger">*</span></label>
-                  <input 
-                    type="text" 
-                    className="form-control" 
-                    value={entityForm.title || ''} 
-                    onChange={e => setEntityForm({ ...entityForm, title: e.target.value })} 
-                    required 
-                  />
-                </div>
-                <div className="form-group">
-                  <label>Description</label>
-                  <textarea 
-                    rows={3} 
-                    className="form-control" 
-                    value={entityForm.description || ''} 
-                    onChange={e => setEntityForm({ ...entityForm, description: e.target.value })} 
-                  />
-                </div>
-                <div className="form-row">
-                  <div className="form-group">
-                    <label>Priority</label>
-                    <select 
-                      className="form-control" 
-                      value={entityForm.priority || 'medium'} 
-                      onChange={e => setEntityForm({ ...entityForm, priority: e.target.value })}
-                    >
-                      <option value="low">Low</option>
-                      <option value="medium">Medium</option>
-                      <option value="high">High</option>
-                    </select>
-                  </div>
-                  <div className="form-group">
-                    <label>Due Date</label>
-                    <input 
-                      type="date" 
-                      className="form-control" 
-                      value={entityForm.dueDate || ''} 
-                      onChange={e => setEntityForm({ ...entityForm, dueDate: e.target.value })} 
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label>Status</label>
-                    <select 
-                      className="form-control" 
-                      value={entityForm.status || 'pending'} 
-                      onChange={e => setEntityForm({ ...entityForm, status: e.target.value })}
-                    >
-                      <option value="pending">Pending</option>
-                      <option value="completed">Completed</option>
-                    </select>
-                  </div>
-                </div>
-              </>
-            )}
-
-            {/* CHECKLISTS TAB */}
-            {activeTab === 'checklists' && (
-              <>
-                <div className="form-group">
-                  <label>Checklist Name <span className="text-danger">*</span></label>
-                  <input 
-                    type="text" 
-                    className="form-control" 
-                    value={entityForm.name || ''} 
-                    onChange={e => setEntityForm({ ...entityForm, name: e.target.value })} 
-                    required 
-                  />
-                </div>
-                <div className="form-group">
-                  <label>Due Date</label>
-                  <input 
-                    type="date" 
-                    className="form-control" 
-                    value={entityForm.dueDate || ''} 
-                    onChange={e => setEntityForm({ ...entityForm, dueDate: e.target.value })} 
-                  />
-                </div>
-
-                <div className="card mb-md" style={{ background: 'var(--bg)', padding: '16px' }}>
-                  <label style={{ fontWeight: 600, display: 'block', marginBottom: '8px' }}>Checklist Items</label>
-                  {(entityForm.items || []).map((it, idx) => (
-                    <div key={idx} className="flex gap-sm mb-xs items-center">
-                      <input 
-                        type="checkbox" 
-                        checked={it.completed || false} 
-                        onChange={() => {
-                          const updated = [...(entityForm.items || [])];
-                          updated[idx] = { ...updated[idx], completed: !updated[idx].completed };
-                          setEntityForm({ ...entityForm, items: updated });
-                        }} 
-                        style={{ width: '18px', height: '18px', cursor: 'pointer' }}
-                      />
-                      <input 
-                        type="text" 
-                        className="form-control" 
-                        value={it.title || ''} 
-                        onChange={e => {
-                          const updated = [...(entityForm.items || [])];
-                          updated[idx] = { ...updated[idx], title: e.target.value };
-                          setEntityForm({ ...entityForm, items: updated });
-                        }}
-                        style={{ fontSize: '13px' }}
-                      />
-                      <button 
-                        type="button" 
-                        className="btn-icon danger" 
-                        onClick={() => {
-                          const updated = (entityForm.items || []).filter((_, i) => i !== idx);
-                          setEntityForm({ ...entityForm, items: updated });
-                        }}
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-                  ))}
-                  <button 
-                    type="button" 
-                    className="btn btn-outline btn-sm mt-sm" 
-                    onClick={() => {
-                      setEntityForm({
-                        ...entityForm,
-                        items: [...(entityForm.items || []), { title: '', completed: false }]
-                      });
-                    }}
-                  >
-                    <Plus size={14} /> Add Item
-                  </button>
-                </div>
-              </>
-            )}
-
-            {/* TRAINING PLANS TAB */}
-            {activeTab === 'training' && (
-              <>
-                <div className="form-group">
-                  <label>Training Plan Name <span className="text-danger">*</span></label>
-                  <input 
-                    type="text" 
-                    className="form-control" 
-                    value={entityForm.name || ''} 
-                    onChange={e => setEntityForm({ ...entityForm, name: e.target.value })} 
-                    required 
-                  />
-                </div>
-                <div className="form-row">
-                  <div className="form-group">
-                    <label>Coach Name</label>
-                    <input 
-                      type="text" 
-                      className="form-control" 
-                      value={entityForm.coachName || ''} 
-                      onChange={e => setEntityForm({ ...entityForm, coachName: e.target.value })} 
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label>Session Date</label>
-                    <input 
-                      type="date" 
-                      className="form-control" 
-                      value={entityForm.date || ''} 
-                      onChange={e => setEntityForm({ ...entityForm, date: e.target.value })} 
-                    />
-                  </div>
-                </div>
-                <div className="form-group">
-                  <label>Focus Area</label>
-                  <input 
-                    type="text" 
-                    className="form-control" 
-                    placeholder="e.g. Offensive Transitions, High Press, Set Pieces" 
-                    value={entityForm.focusArea || ''} 
-                    onChange={e => setEntityForm({ ...entityForm, focusArea: e.target.value })} 
-                  />
-                </div>
-                <div className="form-group">
-                  <label>Plan Details & Drills</label>
-                  <textarea 
-                    rows={4} 
-                    className="form-control" 
-                    value={entityForm.description || ''} 
-                    onChange={e => setEntityForm({ ...entityForm, description: e.target.value })} 
-                    placeholder="Outline the drills and schedule for this session..." 
-                  />
-                </div>
-              </>
-            )}
-
-            {/* EVENTS TAB */}
-            {activeTab === 'events' && (
-              <>
-                <div className="form-group">
-                  <label>Event Title <span className="text-danger">*</span></label>
-                  <input 
-                    type="text" 
-                    className="form-control" 
-                    value={entityForm.title || ''} 
-                    onChange={e => setEntityForm({ ...entityForm, title: e.target.value })} 
-                    required 
-                  />
-                </div>
-                <div className="form-row">
-                  <div className="form-group">
-                    <label>Event Type</label>
-                    <select 
-                      className="form-control" 
-                      value={entityForm.type || 'training'} 
-                      onChange={e => setEntityForm({ ...entityForm, type: e.target.value })}
-                    >
-                      <option value="training">Training</option>
-                      <option value="match">Match</option>
-                      <option value="social">Social / Presentation</option>
-                      <option value="meeting">Team Meeting</option>
-                      <option value="event">General Event</option>
-                    </select>
-                  </div>
-                  <div className="form-group">
-                    <label>Location</label>
-                    <input 
-                      type="text" 
-                      className="form-control" 
-                      value={entityForm.location || ''} 
-                      onChange={e => setEntityForm({ ...entityForm, location: e.target.value })} 
-                    />
-                  </div>
-                </div>
-                <div className="form-row">
-                  <div className="form-group">
-                    <label>Start Date</label>
-                    <input 
-                      type="date" 
-                      className="form-control" 
-                      value={entityForm.startDate || entityForm.date || ''} 
-                      onChange={e => setEntityForm({ ...entityForm, startDate: e.target.value, date: e.target.value })} 
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label>Time</label>
-                    <input 
-                      type="text" 
-                      className="form-control" 
-                      placeholder="e.g. 18:00 - 19:30" 
-                      value={entityForm.time || ''} 
-                      onChange={e => setEntityForm({ ...entityForm, time: e.target.value })} 
-                    />
-                  </div>
-                </div>
-                <div className="form-group">
-                  <label>Event Description</label>
-                  <textarea 
-                    rows={3} 
-                    className="form-control" 
-                    value={entityForm.description || ''} 
-                    onChange={e => setEntityForm({ ...entityForm, description: e.target.value })} 
-                  />
-                </div>
-              </>
-            )}
-
-            {/* SHIFTS TAB */}
-            {activeTab === 'shifts' && (
-              <>
-                <div className="form-group">
-                  <label>Roster Title <span className="text-danger">*</span></label>
-                  <input 
-                    type="text" 
-                    className="form-control" 
-                    value={entityForm.title || ''} 
-                    onChange={e => setEntityForm({ ...entityForm, title: e.target.value })} 
-                    placeholder="e.g. Canteen Saturday Duty"
-                    required 
-                  />
-                </div>
-                <div className="form-group">
-                  <label>Scheduled Date</label>
-                  <input 
-                    type="date" 
-                    className="form-control" 
-                    value={entityForm.date || entityForm.startDate || ''} 
-                    onChange={e => setEntityForm({ ...entityForm, date: e.target.value, startDate: e.target.value })} 
-                  />
-                </div>
-
-                <div className="card mb-md" style={{ background: 'var(--bg)', padding: '16px' }}>
-                  <label style={{ fontWeight: 600, display: 'block', marginBottom: '8px' }}>Shifts & Duties</label>
-                  {(entityForm.shifts || []).map((sh, idx) => (
-                    <div key={idx} className="card mb-sm" style={{ padding: '10px', background: '#fff', border: '1px solid var(--border)' }}>
-                      <div className="form-row" style={{ alignItems: 'center', marginBottom: 0 }}>
-                        <div className="form-group" style={{ marginBottom: 0, flex: 2 }}>
-                          <label style={{ fontSize: '11px' }}>Role / Duty</label>
-                          <input 
-                            type="text" 
-                            className="form-control" 
-                            placeholder="e.g. Cook, Cashier"
-                            value={sh.role || ''} 
-                            onChange={e => {
-                              const updated = [...(entityForm.shifts || [])];
-                              updated[idx] = { ...updated[idx], role: e.target.value };
-                              setEntityForm({ ...entityForm, shifts: updated });
-                            }}
-                          />
-                        </div>
-                        <div className="form-group" style={{ marginBottom: 0, flex: 1 }}>
-                          <label style={{ fontSize: '11px' }}>Time</label>
-                          <input 
-                            type="text" 
-                            className="form-control" 
-                            placeholder="09:00 - 12:00"
-                            value={sh.startTime && sh.endTime ? `${sh.startTime} - ${sh.endTime}` : (sh.time || '')} 
-                            onChange={e => {
-                              const updated = [...(entityForm.shifts || [])];
-                              const parts = e.target.value.split('-');
-                              updated[idx] = { 
-                                ...updated[idx], 
-                                time: e.target.value,
-                                startTime: parts[0]?.trim() || '09:00',
-                                endTime: parts[1]?.trim() || '12:00'
-                              };
-                              setEntityForm({ ...entityForm, shifts: updated });
-                            }}
-                          />
-                        </div>
-                        <div className="form-group" style={{ marginBottom: 0, flex: 2 }}>
-                          <label style={{ fontSize: '11px' }}>Assigned Person</label>
-                          <input 
-                            type="text" 
-                            className="form-control" 
-                            placeholder="Member name"
-                            value={sh.filledByName || ''} 
-                            onChange={e => {
-                              const updated = [...(entityForm.shifts || [])];
-                              updated[idx] = { ...updated[idx], filledByName: e.target.value };
-                              setEntityForm({ ...entityForm, shifts: updated });
-                            }}
-                          />
-                        </div>
-                        <button 
-                          type="button" 
-                          className="btn-icon danger mt-md" 
-                          onClick={() => {
-                            const updated = (entityForm.shifts || []).filter((_, i) => i !== idx);
-                            setEntityForm({ ...entityForm, shifts: updated });
-                          }}
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                  <button 
-                    type="button" 
-                    className="btn btn-outline btn-sm mt-xs" 
-                    onClick={() => {
-                      setEntityForm({
-                        ...entityForm,
-                        shifts: [...(entityForm.shifts || []), { role: '', startTime: '09:00', endTime: '12:00', filledByName: '' }]
-                      });
-                    }}
-                  >
-                    <Plus size={14} /> Add Shift Slot
-                  </button>
-                </div>
-              </>
-            )}
-
-            {/* Modal Actions */}
-            <div className="form-actions mt-md" style={{ display: 'flex', justifyContent: 'space-between' }}>
-              {activeItemModal.mode === 'edit' ? (
-                <button 
-                  type="button" 
-                  className="btn btn-outline danger" 
-                  onClick={() => handleDeleteItem(activeItemModal.data)}
-                >
-                  <Trash2 size={15} /> Delete
-                </button>
-              ) : <div />}
-
-              <div className="flex gap-sm">
-                <button type="button" className="btn btn-outline" onClick={() => setActiveItemModal(null)}>Cancel</button>
-                <button type="submit" className="btn btn-primary" disabled={savingEntity}>
-                  {savingEntity ? 'Saving...' : activeItemModal.mode === 'edit' ? 'Save Changes' : 'Create'}
-                </button>
-              </div>
-            </div>
-          </form>
-        )}
-      </Modal>
     </div>
   );
 }
