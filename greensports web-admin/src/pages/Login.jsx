@@ -108,27 +108,31 @@ export default function Login() {
     setLoadingMessage('Configuring account & synced profile...');
     
     try {
-      const user = await signUp(signupEmail.trim(), signupPassword, fullName, phone, selectedRole);
-      if (user) {
+      const res = await signUp(signupEmail.trim(), signupPassword, fullName, phone, selectedRole);
+      if (res && res.user) {
         if (selectedRole === 'Club Owner') {
-          if (!newClubName) {
+          if (!newClubName.trim()) {
             alert('Please specify your club name.');
             setLoading(false);
             setLoadingMessage('');
             return;
           }
           setLoadingMessage('Creating club workspace...');
-          const clubId = await createClubOnboarding(newClubName, newClubSport, newClubLocation);
+          const clubId = await createClubOnboarding(newClubName.trim(), newClubSport, newClubLocation.trim(), res.user, res.profile);
           if (clubId) {
             setLoadingMessage('Club created! Redirecting to dashboard...');
             setPortalMode('user');
             navigate('/dashboard');
             return;
+          } else {
+            setLoading(false);
+            setLoadingMessage('');
+            return;
           }
         } else {
           if (inviteCode.trim()) {
             setLoadingMessage('Validating invite code & joining club...');
-            const club = await joinClubWithCode(inviteCode.trim());
+            const club = await joinClubWithCode(inviteCode.trim(), res.user, res.profile);
             if (club) {
               setLoadingMessage('Joined club successfully! Redirecting...');
               setPortalMode('user');
@@ -739,6 +743,40 @@ export default function Login() {
                 </div>
               ))}
             </div>
+
+            {authError && (
+              <div style={{
+                background: 'rgba(239, 68, 68, 0.1)',
+                border: '1px solid rgba(239, 68, 68, 0.25)',
+                color: '#f87171',
+                padding: '12px 16px',
+                borderRadius: '12px',
+                fontSize: '13px',
+                marginBottom: '20px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '8px'
+              }}>
+                <span>{authError}</span>
+                <button
+                  type="button"
+                  onClick={() => { setAuthError(null); setActiveTab('signin'); }}
+                  style={{
+                    background: 'transparent',
+                    border: '1px solid #f87171',
+                    color: '#f87171',
+                    borderRadius: '8px',
+                    padding: '4px 8px',
+                    fontSize: '11px',
+                    cursor: 'pointer',
+                    fontWeight: 700
+                  }}
+                >
+                  Sign In
+                </button>
+              </div>
+            )}
 
             {/* STEP 1: Account Creation */}
             {signupStep === 1 && (

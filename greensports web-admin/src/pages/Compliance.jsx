@@ -124,7 +124,21 @@ const Compliance = () => {
     }
   }, [selectedClubId]);
 
+  const safeFormatDate = (val, fallback = '—') => {
+    if (!val) return fallback;
+    try {
+      if (typeof val?.toDate === 'function') {
+        return val.toDate().toLocaleDateString();
+      }
+      const d = new Date(val);
+      return !isNaN(d.getTime()) ? d.toLocaleDateString() : String(val);
+    } catch {
+      return fallback;
+    }
+  };
+
   const loadClubEntities = async () => {
+    if (!selectedClubId) return;
     try {
       const [tSnap, gSnap] = await Promise.all([
         getDocs(collection(db, 'clubs', selectedClubId, 'teams')),
@@ -138,12 +152,16 @@ const Compliance = () => {
   };
 
   const loadCompliance = async () => {
+    if (!selectedClubId) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       const data = await complianceService.getStaffCompliance(selectedClubId);
-      setComplianceData(data);
+      setComplianceData(data || []);
       const forms = await complianceService.getComplianceForms(selectedClubId);
-      setComplianceForms(forms);
+      setComplianceForms(forms || []);
     } catch (error) {
       console.error('Error loading compliance:', error);
     } finally {
@@ -220,7 +238,7 @@ const Compliance = () => {
       r.role || '',
       r.teamName || '',
       r.document || r.requirement || '',
-      r.submitted || (r.submittedAt?.toDate?.().toLocaleDateString() || ''),
+      r.submitted || safeFormatDate(r.submittedAt, ''),
       r.expiry || '',
       r.status || ''
     ]);
@@ -460,7 +478,7 @@ const Compliance = () => {
         return <span className={`badge ${variants[val] || 'badge-default'}`}>{val}</span>;
       }
     },
-    { header: 'Submitted', accessor: 'submittedAt', render: (val) => val?.toDate?.().toLocaleDateString() || 'N/A' },
+    { header: 'Submitted', accessor: 'submittedAt', render: (val) => safeFormatDate(val, 'N/A') },
     { 
       header: 'Expiry Date', 
       accessor: 'expiry',
@@ -502,7 +520,7 @@ const Compliance = () => {
     },
     { header: 'Primary Doc', accessor: 'type', render: (val) => <span className="badge badge-info">{val}</span> },
     { header: 'Requires Expiry', accessor: 'expiryRequired', render: (val) => val ? 'Yes' : 'No' },
-    { header: 'Created', accessor: 'createdAt', render: (val) => val?.toDate?.().toLocaleDateString() || '—' },
+    { header: 'Created', accessor: 'createdAt', render: (val) => safeFormatDate(val, '—') },
   ];
 
   const actions = [
@@ -760,7 +778,7 @@ const Compliance = () => {
                           {row.document || row.requirement}
                         </td>
                         <td style={{ padding: '14px 18px', color: '#4B5563' }}>
-                          {row.submitted || (row.submittedAt?.toDate?.().toLocaleDateString() || '7 Nov 2026')}
+                          {row.submitted || safeFormatDate(row.submittedAt, '7 Nov 2026')}
                         </td>
                         <td style={{ padding: '14px 18px', color: '#4B5563' }}>
                           {row.expiry || '30 Jun 2027'}

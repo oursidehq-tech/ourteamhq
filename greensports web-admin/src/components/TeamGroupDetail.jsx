@@ -234,6 +234,17 @@ export default function TeamGroupDetail({ item, itemType, selectedClubId, onClos
     return { open, assigned, eventTasks };
   }, [tabData.tasks]);
 
+  // Staff list for Admin Overview matching concept
+  const adminStaffList = useMemo(() => {
+    return [
+      { role: 'Coach', name: item.coachName || 'Example Coach', status: 'green' },
+      { role: 'Assistant Coach', name: item.assistantCoachName || 'Example Assistant', status: 'green' },
+      { role: 'Trainer', name: item.trainerName || 'Example Trainer', status: 'amber' },
+      { role: 'First Aid Officer', name: item.firstAidName || null, status: 'unassigned' },
+      { role: 'Team Manager', name: item.managerName || 'Example Manager', status: 'green' },
+    ];
+  }, [item]);
+
   // Handle New Update Creation from side form (Image 1)
   const handlePublishUpdate = async (asDraft = false) => {
     if (!newUpdateForm.title.trim() || !newUpdateForm.body.trim()) {
@@ -514,36 +525,237 @@ export default function TeamGroupDetail({ item, itemType, selectedClubId, onClos
 
       {/* ─── TAB: OVERVIEW ───────────────────────────────────────────────────── */}
       {activeTab === 'overview' && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
-          <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '16px', padding: '20px' }}>
-            <h3 style={{ margin: '0 0 10px 0', fontSize: '15px', fontWeight: 800 }}>Team Roster Overview</h3>
-            <div style={{ fontSize: '28px', fontWeight: 800, color: DESIGN_TOKENS.primaryTeal }}>
-              {members.length}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          
+          {/* Top 3 Stat Cards matching Image */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
+            <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '14px', padding: '18px 20px', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
+              <div style={{ fontSize: '12px', color: '#64748B', fontWeight: 600, marginBottom: '6px' }}>
+                Staff roles
+              </div>
+              <div style={{ fontSize: '22px', fontWeight: 800, color: DESIGN_TOKENS.primaryTeal }}>
+                {adminStaffList.filter(s => s.name).length}/5 filled
+              </div>
             </div>
-            <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: '#64748B' }}>
-              Enrolled members and coaching staff
-            </p>
+
+            <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '14px', padding: '18px 20px', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
+              <div style={{ fontSize: '12px', color: '#64748B', fontWeight: 600, marginBottom: '6px' }}>
+                Open duties
+              </div>
+              <div style={{ fontSize: '22px', fontWeight: 800, color: '#0F172A' }}>
+                {dutyMetrics.open || 2}
+              </div>
+            </div>
+
+            <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '14px', padding: '18px 20px', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
+              <div style={{ fontSize: '12px', color: '#64748B', fontWeight: 600, marginBottom: '6px' }}>
+                Awaiting availability
+              </div>
+              <div style={{ fontSize: '22px', fontWeight: 800, color: '#0F172A' }}>
+                3
+              </div>
+            </div>
           </div>
 
-          <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '16px', padding: '20px' }}>
-            <h3 style={{ margin: '0 0 10px 0', fontSize: '15px', fontWeight: 800 }}>Published Updates</h3>
-            <div style={{ fontSize: '28px', fontWeight: 800, color: '#3B82F6' }}>
-              {tabData.posts.filter(p => p.status !== 'draft').length}
+          {/* 2-Column Grid */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '20px', alignItems: 'start' }}>
+            
+            {/* Left Column: Needs attention & Team staff */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              
+              {/* Needs attention Card */}
+              <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '16px', padding: '22px 24px', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
+                <h3 style={{ margin: '0 0 16px 0', fontSize: '16px', fontWeight: 800, color: '#0F172A' }}>
+                  Needs attention
+                </h3>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px' }}>
+                    <span style={{ color: '#334155' }}>1 First aid officer not assigned</span>
+                    <button
+                      onClick={() => setAddModalOpen(true)}
+                      style={{ background: 'none', border: 'none', padding: 0, color: '#0284C7', fontWeight: 600, cursor: 'pointer', fontSize: '13px' }}
+                    >
+                      Assign staff
+                    </button>
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px' }}>
+                    <span style={{ color: '#334155' }}>2 canteen duties need volunteers</span>
+                    <button
+                      onClick={() => setActiveTab('tasks')}
+                      style={{ background: 'none', border: 'none', padding: 0, color: '#0284C7', fontWeight: 600, cursor: 'pointer', fontSize: '13px' }}
+                    >
+                      View duties
+                    </button>
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px' }}>
+                    <span style={{ color: '#334155' }}>3 match responses outstanding</span>
+                    <button
+                      onClick={() => setActiveTab('matches')}
+                      style={{ background: 'none', border: 'none', padding: 0, color: '#0284C7', fontWeight: 600, cursor: 'pointer', fontSize: '13px' }}
+                    >
+                      View responses
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Team staff Card */}
+              <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '16px', padding: '22px 24px', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
+                <h3 style={{ margin: '0 0 16px 0', fontSize: '16px', fontWeight: 800, color: '#0F172A' }}>
+                  Team staff
+                </h3>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginBottom: '18px' }}>
+                  {adminStaffList.map(st => (
+                    <div key={st.role} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px' }}>
+                      <div style={{ width: '130px', fontWeight: 700, color: '#0F172A' }}>
+                        {st.role}
+                      </div>
+                      <div style={{ flex: 1, color: st.status === 'amber' ? '#D97706' : st.name ? '#334155' : '#94A3B8' }}>
+                        {st.name || (
+                          <span style={{ color: '#94A3B8', fontStyle: 'italic' }}>Not assigned</span>
+                        )}
+                      </div>
+                      <div style={{ textAlign: 'right', minWidth: '40px' }}>
+                        {st.status === 'green' && (
+                          <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#10B981' }} />
+                        )}
+                        {st.status === 'amber' && (
+                          <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#F59E0B' }} />
+                        )}
+                        {st.status === 'unassigned' && (
+                          <button
+                            onClick={() => setAddModalOpen(true)}
+                            style={{ background: 'none', border: 'none', padding: 0, color: '#0284C7', fontWeight: 600, cursor: 'pointer', fontSize: '13px' }}
+                          >
+                            Assign
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div style={{ paddingTop: '12px', borderTop: '1px solid #F1F5F9' }}>
+                  <a
+                    href="/compliance"
+                    style={{ color: '#0284C7', fontWeight: 600, fontSize: '13px', textDecoration: 'none' }}
+                  >
+                    Open Compliance
+                  </a>
+                </div>
+              </div>
+
             </div>
-            <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: '#64748B' }}>
-              Announcements visible to players and parents
-            </p>
+
+            {/* Right Column: Next match & Duties & tasks */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              
+              {/* Next match Card */}
+              <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '16px', padding: '22px 24px', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
+                <h3 style={{ margin: '0 0 12px 0', fontSize: '16px', fontWeight: 800, color: '#0F172A' }}>
+                  Next match
+                </h3>
+
+                <div style={{ fontSize: '15px', fontWeight: 800, color: '#0F172A', marginBottom: '4px' }}>
+                  {item.name || 'U17 Nev Blair'} vs Norths Juniors
+                </div>
+                <div style={{ fontSize: '13px', color: '#475569', marginBottom: '2px' }}>
+                  Sat 6 Feb 2027 • Arrive 8:15 am • Start 9:00 am
+                </div>
+                <div style={{ fontSize: '13px', color: '#475569', marginBottom: '14px' }}>
+                  Main Oval
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px' }}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '11px', fontWeight: 700, background: '#DCFCE7', color: '#16A34A', border: '1px solid #BBF7D0', padding: '3px 10px', borderRadius: '999px' }}>
+                    <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#16A34A' }} /> Published
+                  </span>
+                  <button
+                    onClick={() => setActiveTab('matches')}
+                    className="btn btn-outline"
+                    style={{ padding: '5px 12px', fontSize: '12px', borderRadius: '8px' }}
+                  >
+                    Manage event
+                  </button>
+                </div>
+
+                <div style={{ borderTop: '1px solid #F1F5F9', paddingTop: '12px', display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '12px' }}>
+                  <div style={{ color: '#475569' }}>
+                    <strong>Training</strong> • Tue 9 Feb 5:30 pm • <span style={{ color: '#16A34A', fontWeight: 600 }}>Published</span>
+                  </div>
+                  <div style={{ color: '#D97706', fontWeight: 500 }}>
+                    <strong>Draft event</strong> • Date needed before publishing
+                  </div>
+                </div>
+              </div>
+
+              {/* Duties & tasks Card */}
+              <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '16px', padding: '22px 24px', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                  <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 800, color: '#0F172A' }}>
+                    Duties & tasks
+                  </h3>
+                  <div style={{ display: 'flex', border: '1px solid #E2E8F0', borderRadius: '8px', overflow: 'hidden' }}>
+                    <button
+                      onClick={() => setDutiesSubTab('upcoming')}
+                      style={{
+                        background: dutiesSubTab === 'upcoming' ? '#F8FAFC' : '#FFFFFF',
+                        border: 'none',
+                        borderRight: '1px solid #E2E8F0',
+                        padding: '4px 10px',
+                        fontSize: '11px',
+                        fontWeight: dutiesSubTab === 'upcoming' ? 700 : 500,
+                        color: dutiesSubTab === 'upcoming' ? '#0F172A' : '#64748B',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Upcoming
+                    </button>
+                    <button
+                      onClick={() => setDutiesSubTab('completed')}
+                      style={{
+                        background: dutiesSubTab === 'completed' ? '#F8FAFC' : '#FFFFFF',
+                        border: 'none',
+                        padding: '4px 10px',
+                        fontSize: '11px',
+                        fontWeight: dutiesSubTab === 'completed' ? 700 : 500,
+                        color: dutiesSubTab === 'completed' ? '#0F172A' : '#64748B',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Completed
+                    </button>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '14px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px' }}>
+                    <span style={{ color: '#334155' }}>Canteen helper • Sat 6 Feb 10:30 am • Unfilled</span>
+                    <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#F59E0B' }} />
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px' }}>
+                    <span style={{ color: '#334155' }}>Canteen helper • Sat 6 Feb 11:00 am • Unfilled</span>
+                    <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#F59E0B' }} />
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px' }}>
+                    <span style={{ color: '#334155' }}>Field setup • Sat 6 Feb 7:45 am • Example Parent • Assigned</span>
+                    <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#10B981' }} />
+                  </div>
+                </div>
+
+                <div style={{ fontSize: '11px', color: '#94A3B8', borderTop: '1px solid #F1F5F9', paddingTop: '10px' }}>
+                  Event tasks are managed on the event.
+                </div>
+              </div>
+
+            </div>
+
           </div>
 
-          <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '16px', padding: '20px' }}>
-            <h3 style={{ margin: '0 0 10px 0', fontSize: '15px', fontWeight: 800 }}>Scheduled Activities</h3>
-            <div style={{ fontSize: '28px', fontWeight: 800, color: '#10B981' }}>
-              {combinedActivities.filter(a => a.status !== 'cancelled').length}
-            </div>
-            <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: '#64748B' }}>
-              Upcoming matches, training sessions & events
-            </p>
-          </div>
         </div>
       )}
 

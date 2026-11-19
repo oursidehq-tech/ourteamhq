@@ -283,18 +283,18 @@ export function AuthProvider({ children }) {
       if (initialMemberships.length > 0) {
         setUserClubIds(initialMemberships.map(m => m.clubId));
       }
-      return res.user;
+      return { user: res.user, profile: userProfile };
     } catch (error) {
+      let msg = error.message;
       if (error.code === 'auth/email-already-in-use') {
-        setAuthError('This email is already registered. Please sign in or reset your password.');
+        msg = 'This email is already registered. Please sign in or reset your password.';
       } else if (error.code === 'auth/weak-password') {
-        setAuthError('Password must be at least 6 characters.');
+        msg = 'Password must be at least 6 characters.';
       } else if (error.code === 'auth/invalid-email') {
-        setAuthError('Please enter a valid email address.');
-      } else {
-        setAuthError(error.message);
+        msg = 'Please enter a valid email address.';
       }
-      return null;
+      setAuthError(msg);
+      throw new Error(msg);
     }
   };
 
@@ -317,8 +317,13 @@ export function AuthProvider({ children }) {
   };
 
   // Join a club with invite code
-  const joinClubWithCode = async (code) => {
-    if (!user || !profile) return false;
+  const joinClubWithCode = async (code, overrideUser = null, overrideProfile = null) => {
+    const activeUser = overrideUser || user || auth.currentUser;
+    const activeProfile = overrideProfile || profile;
+    if (!activeUser) {
+      alert('Authentication required. Please sign in or complete registration.');
+      return false;
+    }
     try {
       const normalizedCode = code.toUpperCase().trim();
       const clubsSnap = await getDocs(collection(db, 'clubs'));
@@ -339,10 +344,10 @@ export function AuthProvider({ children }) {
         throw new Error('Invalid invite code. Please check and try again.');
       }
 
-      const assignedRole = matchedInvite.role || 'Player';
+      const assignedRole = matchedInvite?.role || 'Player';
       
       // Update profile
-      const updatedMemberships = [...(profile.clubMemberships || [])];
+      const updatedMemberships = [...(activeProfile?.clubMemberships || [])];
       if (updatedMemberships.some(m => m.clubId === targetClub.id)) {
         throw new Error('You are already a member of this club!');
       }
@@ -356,22 +361,22 @@ export function AuthProvider({ children }) {
       });
 
       // Update user document
-      await setDoc(doc(db, 'users', user.uid), {
+      await setDoc(doc(db, 'users', activeUser.uid), {
         clubMemberships: updatedMemberships
       }, { merge: true });
 
       // Add to club members subcollection
-      const memberRef = doc(db, 'clubs', targetClub.id, 'members', user.uid);
+      const memberRef = doc(db, 'clubs', targetClub.id, 'members', activeUser.uid);
       await setDoc(memberRef, {
-        userId: user.uid,
-        displayName: profile.displayName || user.email.split('@')[0],
-        email: user.email,
+        userId: activeUser.uid,
+        displayName: activeProfile?.displayName || activeUser.email?.split('@')[0] || 'Member',
+        email: activeUser.email,
         role: assignedRole,
         roles: [assignedRole],
         joinedAt: serverTimestamp()
       });
 
-      setProfile(prev => ({ ...prev, clubMemberships: updatedMemberships }));
+      setProfile(prev => ({ ...(prev || activeProfile), clubMemberships: updatedMemberships }));
       setUserClubIds(updatedMemberships.map(m => m.clubId));
       return targetClub;
     } catch (err) {
@@ -381,8 +386,16 @@ export function AuthProvider({ children }) {
   };
 
   // Create a brand new club
-  const createClubOnboarding = async (clubName, sport, location) => {
-    if (!user || !profile) return false;
+  const createClubOnboarding = async (clubName, sport, location, overrideUser = null, overrideProfile = null) => {
+    const activeUser = overrideUser || user || auth.currentUser;
+    const activeProfile = overrideProfile || profile || {
+      displayName: activeUser?.displayName || activeUser?.email?.split('@')[0] || 'Club Owner',
+      clubMemberships: []
+    };
+    if (!activeUser) {
+      alert('Authentication required. Please sign in or complete registration.');
+      return false;
+    }
     try {
       const code = Math.random().toString(36).substring(2, 8).toUpperCase();
       const clubRef = doc(collection(db, 'clubs'));
@@ -392,7 +405,7 @@ export function AuthProvider({ children }) {
         sport: sport || 'Soccer',
         location: location || '',
         inviteCode: code,
-        ownerId: user.uid,
+        ownerId: activeUser.uid,
         createdAt: serverTimestamp(),
         plan: 'Starter'
       });
@@ -402,12 +415,12 @@ export function AuthProvider({ children }) {
       await setDoc(inviteRef, {
         code,
         role: 'Player',
-        createdBy: user.uid,
+        createdBy: activeUser.uid,
         createdAt: serverTimestamp()
       });
 
       // Add owner membership to user
-      const updatedMemberships = [...(profile.clubMemberships || [])];
+      const updatedMemberships = [...(activeProfile?.clubMemberships || [])];
       updatedMemberships.push({
         clubId: clubRef.id,
         clubName: clubName,
@@ -416,24 +429,24 @@ export function AuthProvider({ children }) {
         joinedAt: new Date().toISOString()
       });
 
-      await setDoc(doc(db, 'users', user.uid), {
+      await setDoc(doc(db, 'users', activeUser.uid), {
         clubMemberships: updatedMemberships,
         accountType: 'owner'
       }, { merge: true });
 
       // Add to members subcollection
-      const memberRef = doc(db, 'clubs', clubRef.id, 'members', user.uid);
+      const memberRef = doc(db, 'clubs', clubRef.id, 'members', activeUser.uid);
       await setDoc(memberRef, {
-        userId: user.uid,
-        displayName: profile.displayName,
-        email: user.email,
+        userId: activeUser.uid,
+        displayName: activeProfile.displayName || activeUser.email?.split('@')[0] || 'Club Owner',
+        email: activeUser.email,
         role: 'Owner',
         roles: ['Owner'],
         joinedAt: serverTimestamp()
       });
 
       setProfile(prev => ({
-        ...prev,
+        ...(prev || activeProfile),
         accountType: 'owner',
         clubMemberships: updatedMemberships
       }));
