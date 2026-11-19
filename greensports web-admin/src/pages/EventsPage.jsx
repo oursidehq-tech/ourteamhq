@@ -4,7 +4,7 @@ import { db } from '../config/firebase';
 import { useClub } from '../context/ClubContext';
 import Modal from '../components/Modal';
 import MultiSelect from '../components/MultiSelect';
-import { Search, Plus, Edit2, Trash2, Calendar, RefreshCw, Eye, MapPin, Clock, Users } from 'lucide-react';
+import { Search, Plus, Edit2, Trash2, Calendar, RefreshCw, Eye, MapPin, Clock, Users, CheckCircle2, AlertCircle, Check, ListChecks, User } from 'lucide-react';
 
 export default function EventsPage() {
   const { selectedClubId } = useClub();
@@ -12,6 +12,18 @@ export default function EventsPage() {
   const [search, setSearch] = useState('');
   const [modal, setModal] = useState(null);
   const [viewingEvent, setViewingEvent] = useState(null);
+  const [eventViewTab, setEventViewTab] = useState('checklist'); // 'details' | 'checklist' | 'attendees'
+  const [checklistTasks, setChecklistTasks] = useState([
+    { id: 'ev-t1', title: 'Book venue', owners: [{ name: 'Committee', type: 'group' }, { name: 'Example Coordinator', type: 'user' }], status: 'complete', completedBy: 'Example Coordinator' },
+    { id: 'ev-t2', title: 'Set up online registration', owners: [{ name: 'Example Admin', type: 'user' }], status: 'in_progress' },
+    { id: 'ev-t3', title: 'Organise volunteers', owners: [{ name: 'U13 Managers', type: 'group' }], status: 'not_started' },
+    { id: 'ev-t4', title: 'Prepare player packs', owners: [{ name: 'U17 Nev Blair', type: 'team' }], status: 'not_started' },
+    { id: 'ev-t5', title: 'Confirm first aid cover', owners: [{ name: 'Example Trainer', type: 'user' }], status: 'not_started' },
+  ]);
+  const [assignModalTask, setAssignModalTask] = useState(null);
+  const [assigneeForm, setAssigneeForm] = useState({ name: '', type: 'user' });
+  const [newTaskInput, setNewTaskInput] = useState('');
+  const [showAddTask, setShowAddTask] = useState(false);
   const [form, setForm] = useState({});
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -460,79 +472,362 @@ export default function EventsPage() {
         </div>
       </Modal>
 
-      {/* View Event Detail Modal */}
-      <Modal open={!!viewingEvent} onClose={() => setViewingEvent(null)} title="Event Details" wide={true}>
+      {/* View Event Detail Modal matching Concept */}
+      <Modal open={!!viewingEvent} onClose={() => setViewingEvent(null)} title="" wide={true}>
         {viewingEvent && (
           <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
+            {/* Top Modal Header */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
               <div>
-                <h3 style={{ margin: '0 0 6px 0', fontSize: '18px' }}>{viewingEvent.title}</h3>
-                <span className={`badge ${typeBadge(viewingEvent.type)}`}>{viewingEvent.type || 'Event'}</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                  <h2 style={{ margin: 0, fontSize: '22px', fontWeight: 800, color: '#0F172A' }}>
+                    {viewingEvent.title || '2027 Season Registration'}
+                  </h2>
+                  <span style={{ fontSize: '11px', fontWeight: 600, background: '#0D9488', color: '#FFFFFF', padding: '3px 10px', borderRadius: '999px' }}>
+                    Concept • Example data
+                  </span>
+                </div>
+                <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: '#64748B' }}>
+                  {viewingEvent.startDate || viewingEvent.date || 'Sat 6 Feb 2027'} • {viewingEvent.time || viewingEvent.startTime || '9:00 am'} • {viewingEvent.location || 'Clubhouse'}
+                </p>
               </div>
-              <div className="flex gap-sm">
-                <button className="btn btn-outline" onClick={() => { const ev = viewingEvent; setViewingEvent(null); openEdit(ev); }}>
-                  <Edit2 size={15} /> Edit Event
+
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button className="btn btn-outline" onClick={() => { const ev = viewingEvent; setViewingEvent(null); openEdit(ev); }} style={{ padding: '6px 12px', fontSize: '12px' }}>
+                  <Edit2 size={14} style={{ marginRight: 4 }} /> Edit
                 </button>
-                <button className="btn btn-outline danger" onClick={() => handleDelete(viewingEvent)}>
-                  <Trash2 size={15} /> Delete
+                <button className="btn btn-outline danger" onClick={() => handleDelete(viewingEvent)} style={{ padding: '6px 12px', fontSize: '12px' }}>
+                  <Trash2 size={14} />
                 </button>
               </div>
             </div>
 
-            <div className="card mb-md" style={{ background: 'var(--bg)', padding: '16px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
-              <div>
-                <label className="text-muted text-xs" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <Calendar size={13} /> Date
-                </label>
-                <strong>{viewingEvent.startDate === viewingEvent.endDate ? viewingEvent.startDate || viewingEvent.date : `${viewingEvent.startDate || viewingEvent.date} to ${viewingEvent.endDate || viewingEvent.date}`}</strong>
-              </div>
-              <div>
-                <label className="text-muted text-xs" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <Clock size={13} /> Time
-                </label>
-                <strong>{viewingEvent.isAllDay ? 'All Day' : (viewingEvent.time || viewingEvent.startTime || '—')}</strong>
-              </div>
-              <div>
-                <label className="text-muted text-xs" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <MapPin size={13} /> Location
-                </label>
-                <strong>{viewingEvent.location || 'Clubhouse'}</strong>
-              </div>
-              <div>
-                <label className="text-muted text-xs" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <Users size={13} /> Target
-                </label>
-                <strong>{viewingEvent.assignedUserName ? viewingEvent.assignedUserName : viewingEvent.assignedGroupName || 'Open to All'}</strong>
-              </div>
+            {/* Navigation Tabs */}
+            <div style={{ display: 'flex', gap: '24px', borderBottom: '1px solid #E2E8F0', marginBottom: '20px' }}>
+              {[
+                { id: 'details', label: 'Event Details' },
+                { id: 'checklist', label: 'Checklist' },
+                { id: 'attendees', label: 'Attendees' },
+              ].map(tab => {
+                const isActive = eventViewTab === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => setEventViewTab(tab.id)}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      borderBottom: isActive ? '2px solid #0D9488' : '2px solid transparent',
+                      padding: '0 4px 12px 4px',
+                      fontSize: '13px',
+                      fontWeight: isActive ? 700 : 500,
+                      color: isActive ? '#0D9488' : '#64748B',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    {tab.label}
+                  </button>
+                );
+              })}
             </div>
 
-            {viewingEvent.description && (
-              <div className="card mb-md" style={{ background: 'var(--bg)', padding: '16px' }}>
-                <h5 style={{ margin: '0 0 8px 0', fontSize: '13px', textTransform: 'uppercase', color: 'var(--text-secondary)' }}>Description</h5>
-                <p style={{ margin: 0, lineHeight: 1.6, whiteSpace: 'pre-line' }}>{viewingEvent.description}</p>
+            {/* ── TAB 1: CHECKLIST ── */}
+            {eventViewTab === 'checklist' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                
+                {/* Event audience callout */}
+                <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '10px', padding: '12px 16px' }}>
+                  <div style={{ fontWeight: 700, fontSize: '13px', color: '#0F172A', marginBottom: '2px' }}>
+                    Event audience: {viewingEvent.assignedGroupName || viewingEvent.assignedUserName || 'All club members'}
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#64748B' }}>
+                    Who can see this event — not task owners
+                  </div>
+                </div>
+
+                {/* Main Checklist Card */}
+                <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '14px', padding: '20px', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
+                  
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '10px' }}>
+                    <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 800, color: '#0F172A' }}>
+                      Registration Day checklist
+                    </h3>
+
+                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                      <span style={{ fontSize: '11px', fontWeight: 600, background: '#F1F5F9', color: '#475569', padding: '4px 10px', borderRadius: '6px' }}>
+                        Copied from template
+                      </span>
+                      <button
+                        onClick={() => setShowAddTask(!showAddTask)}
+                        className="btn btn-outline"
+                        style={{ padding: '5px 12px', fontSize: '12px', borderRadius: '8px' }}
+                      >
+                        + Add Task
+                      </button>
+                    </div>
+                  </div>
+
+                  {showAddTask && (
+                    <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', background: '#F8FAFC', padding: '10px', borderRadius: '8px', border: '1px solid #E2E8F0' }}>
+                      <input
+                        className="form-control"
+                        placeholder="Enter task name..."
+                        value={newTaskInput}
+                        onChange={e => setNewTaskInput(e.target.value)}
+                        style={{ flex: 1, fontSize: '13px' }}
+                      />
+                      <button
+                        className="btn btn-primary"
+                        onClick={() => {
+                          if (!newTaskInput.trim()) return;
+                          setChecklistTasks(prev => [
+                            ...prev,
+                            { id: `ev-t-${Date.now()}`, title: newTaskInput.trim(), owners: [{ name: 'Example Coordinator', type: 'user' }], status: 'not_started' }
+                          ]);
+                          setNewTaskInput('');
+                          setShowAddTask(false);
+                        }}
+                        style={{ background: '#0D9488', borderColor: '#0D9488', fontSize: '12px', padding: '0 14px' }}
+                      >
+                        Add
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Progress bar */}
+                  <div style={{ marginBottom: '16px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '6px' }}>
+                      <div style={{ width: '120px', height: '6px', background: '#E2E8F0', borderRadius: '999px', overflow: 'hidden' }}>
+                        <div style={{
+                          width: `${(checklistTasks.filter(t => t.status === 'complete').length / Math.max(checklistTasks.length, 1)) * 100}%`,
+                          height: '100%',
+                          background: '#0D9488',
+                          borderRadius: '999px',
+                          transition: 'width 0.3s ease'
+                        }} />
+                      </div>
+                      <span style={{ fontSize: '12px', color: '#475569', fontWeight: 600 }}>
+                        {checklistTasks.filter(t => t.status === 'complete').length} of {checklistTasks.length} tasks complete
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Tasks Table */}
+                  <div style={{ border: '1px solid #E2E8F0', borderRadius: '12px', overflow: 'hidden' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', margin: 0 }}>
+                      <thead>
+                        <tr style={{ background: '#F8FAFC', borderBottom: '1px solid #E2E8F0', textAlign: 'left', fontSize: '11px', textTransform: 'uppercase', color: '#64748B' }}>
+                          <th style={{ padding: '10px 14px' }}>Task</th>
+                          <th style={{ padding: '10px 14px' }}>Task owners</th>
+                          <th style={{ padding: '10px 14px' }}>Status</th>
+                          <th style={{ padding: '10px 14px', textAlign: 'right' }}>Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {checklistTasks.map(task => {
+                          const isComplete = task.status === 'complete';
+                          const isInProgress = task.status === 'in_progress';
+                          return (
+                            <tr key={task.id} style={{ borderBottom: '1px solid #F1F5F9' }}>
+                              <td style={{ padding: '12px 14px', fontWeight: 700, fontSize: '13px', color: '#0F172A' }}>
+                                {task.title}
+                              </td>
+
+                              <td style={{ padding: '12px 14px' }}>
+                                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                                  {(task.owners || []).map((ow, idx) => (
+                                    <span key={idx} style={{
+                                      fontSize: '11px',
+                                      fontWeight: 600,
+                                      background: '#F1F5F9',
+                                      color: '#334155',
+                                      padding: '3px 8px',
+                                      borderRadius: '6px',
+                                      border: '1px solid #E2E8F0'
+                                    }}>
+                                      {ow.name} ({ow.type})
+                                    </span>
+                                  ))}
+                                </div>
+                              </td>
+
+                              <td style={{ padding: '12px 14px' }}>
+                                {isComplete ? (
+                                  <div style={{ background: '#DCFCE7', border: '1px solid #BBF7D0', borderRadius: '6px', padding: '4px 8px', display: 'inline-block' }}>
+                                    <div style={{ fontSize: '11px', fontWeight: 700, color: '#166534' }}>Complete</div>
+                                    <div style={{ fontSize: '10px', color: '#15803D' }}>Completed by {task.completedBy || 'Coordinator'}</div>
+                                  </div>
+                                ) : isInProgress ? (
+                                  <span style={{ fontSize: '11px', fontWeight: 700, background: '#FEF3C7', color: '#B45309', border: '1px solid #FDE68A', padding: '3px 8px', borderRadius: '6px' }}>
+                                    In progress
+                                  </span>
+                                ) : (
+                                  <span style={{ fontSize: '11px', fontWeight: 600, background: '#F1F5F9', color: '#64748B', border: '1px solid #E2E8F0', padding: '3px 8px', borderRadius: '6px' }}>
+                                    Not started
+                                  </span>
+                                )}
+                              </td>
+
+                              <td style={{ padding: '12px 14px', textAlign: 'right' }}>
+                                <div style={{ display: 'inline-flex', gap: '10px', alignItems: 'center' }}>
+                                  {isComplete ? (
+                                    <button
+                                      onClick={() => {
+                                        setChecklistTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: 'in_progress' } : t));
+                                      }}
+                                      style={{ background: 'none', border: 'none', padding: 0, color: '#0284C7', fontWeight: 600, fontSize: '12px', cursor: 'pointer' }}
+                                    >
+                                      Reassign
+                                    </button>
+                                  ) : (
+                                    <button
+                                      onClick={() => {
+                                        setChecklistTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: 'complete', completedBy: 'Example Admin' } : t));
+                                      }}
+                                      style={{ background: 'none', border: 'none', padding: 0, color: '#0284C7', fontWeight: 600, fontSize: '12px', cursor: 'pointer' }}
+                                    >
+                                      Mark complete
+                                    </button>
+                                  )}
+
+                                  <button
+                                    onClick={() => {
+                                      setAssignModalTask(task);
+                                      setAssigneeForm({ name: '', type: 'user' });
+                                    }}
+                                    style={{ background: 'none', border: 'none', padding: 0, color: '#0284C7', fontWeight: 600, fontSize: '12px', cursor: 'pointer' }}
+                                  >
+                                    + Assign
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <p style={{ margin: '12px 0 0 0', fontSize: '11px', color: '#94A3B8', fontStyle: 'italic' }}>
+                    Changing the template will not change this event checklist.
+                  </p>
+                </div>
               </div>
             )}
 
-            {/* RSVPs section */}
-            <div className="card mb-md" style={{ padding: '16px' }}>
-              <h5 style={{ margin: '0 0 10px 0', fontSize: '14px', fontWeight: 600 }}>
-                RSVP Responses ({Object.keys(viewingEvent.rsvps || viewingEvent.rsvp || {}).length})
-              </h5>
-              {Object.keys(viewingEvent.rsvps || viewingEvent.rsvp || {}).length === 0 ? (
-                <p className="text-muted text-sm" style={{ margin: 0 }}>No RSVPs submitted yet for this event.</p>
-              ) : (
-                <div className="flex gap-xs" style={{ flexWrap: 'wrap' }}>
-                  {Object.entries(viewingEvent.rsvps || viewingEvent.rsvp || {}).map(([userId, status], idx) => (
-                    <span key={idx} className={`badge ${status === 'yes' ? 'badge-success' : status === 'no' ? 'badge-danger' : 'badge-warning'}`}>
-                      {userId}: {status}
-                    </span>
-                  ))}
+            {/* ── TAB 2: EVENT DETAILS ── */}
+            {eventViewTab === 'details' && (
+              <div>
+                <div className="card mb-md" style={{ background: '#F8FAFC', padding: '16px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', borderRadius: '12px', border: '1px solid #E2E8F0' }}>
+                  <div>
+                    <label className="text-muted text-xs" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <Calendar size={13} /> Date
+                    </label>
+                    <strong>{viewingEvent.startDate === viewingEvent.endDate ? viewingEvent.startDate || viewingEvent.date : `${viewingEvent.startDate || viewingEvent.date} to ${viewingEvent.endDate || viewingEvent.date}`}</strong>
+                  </div>
+                  <div>
+                    <label className="text-muted text-xs" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <Clock size={13} /> Time
+                    </label>
+                    <strong>{viewingEvent.isAllDay ? 'All Day' : (viewingEvent.time || viewingEvent.startTime || '—')}</strong>
+                  </div>
+                  <div>
+                    <label className="text-muted text-xs" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <MapPin size={13} /> Location
+                    </label>
+                    <strong>{viewingEvent.location || 'Clubhouse'}</strong>
+                  </div>
+                  <div>
+                    <label className="text-muted text-xs" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <Users size={13} /> Target
+                    </label>
+                    <strong>{viewingEvent.assignedUserName ? viewingEvent.assignedUserName : viewingEvent.assignedGroupName || 'Open to All'}</strong>
+                  </div>
                 </div>
-              )}
-            </div>
 
-            <div className="form-actions mt-md">
+                {viewingEvent.description && (
+                  <div className="card mb-md" style={{ background: '#F8FAFC', padding: '16px', borderRadius: '12px', border: '1px solid #E2E8F0' }}>
+                    <h5 style={{ margin: '0 0 8px 0', fontSize: '13px', textTransform: 'uppercase', color: '#64748B' }}>Description</h5>
+                    <p style={{ margin: 0, lineHeight: 1.6, whiteSpace: 'pre-line', fontSize: '13px', color: '#334155' }}>{viewingEvent.description}</p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ── TAB 3: ATTENDEES ── */}
+            {eventViewTab === 'attendees' && (
+              <div className="card mb-md" style={{ padding: '16px', borderRadius: '12px', border: '1px solid #E2E8F0' }}>
+                <h5 style={{ margin: '0 0 10px 0', fontSize: '14px', fontWeight: 600 }}>
+                  RSVP Responses ({Object.keys(viewingEvent.rsvps || viewingEvent.rsvp || {}).length})
+                </h5>
+                {Object.keys(viewingEvent.rsvps || viewingEvent.rsvp || {}).length === 0 ? (
+                  <p className="text-muted text-sm" style={{ margin: 0 }}>No RSVPs submitted yet for this event.</p>
+                ) : (
+                  <div className="flex gap-xs" style={{ flexWrap: 'wrap' }}>
+                    {Object.entries(viewingEvent.rsvps || viewingEvent.rsvp || {}).map(([userId, status], idx) => (
+                      <span key={idx} className={`badge ${status === 'yes' ? 'badge-success' : status === 'no' ? 'badge-danger' : 'badge-warning'}`}>
+                        {userId}: {status}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="form-actions mt-md" style={{ marginTop: '20px' }}>
               <button className="btn btn-primary" onClick={() => setViewingEvent(null)}>Close</button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Modal: Assign Task Owner */}
+      <Modal open={!!assignModalTask} onClose={() => setAssignModalTask(null)} title="Assign Task Owner">
+        {assignModalTask && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <p style={{ margin: 0, fontSize: '13px', color: '#334155' }}>
+              Assign owner for task: <strong>{assignModalTask.title}</strong>
+            </p>
+            <div className="form-group">
+              <label style={{ fontSize: '12px', fontWeight: 700 }}>Owner Type</label>
+              <select
+                className="form-control"
+                value={assigneeForm.type}
+                onChange={e => setAssigneeForm({ ...assigneeForm, type: e.target.value })}
+              >
+                <option value="user">User / Member</option>
+                <option value="group">Group / Committee</option>
+                <option value="team">Team</option>
+              </select>
+            </div>
+            <div className="form-group">
+              <label style={{ fontSize: '12px', fontWeight: 700 }}>Owner Name / Assignee</label>
+              <input
+                className="form-control"
+                placeholder="e.g. Example Coordinator / Committee / U17 Nev Blair"
+                value={assigneeForm.name}
+                onChange={e => setAssigneeForm({ ...assigneeForm, name: e.target.value })}
+              />
+            </div>
+            <div className="form-actions">
+              <button className="btn btn-outline" onClick={() => setAssignModalTask(null)}>Cancel</button>
+              <button
+                className="btn btn-primary"
+                onClick={() => {
+                  if (!assigneeForm.name.trim()) return;
+                  setChecklistTasks(prev => prev.map(t => {
+                    if (t.id === assignModalTask.id) {
+                      const updatedOwners = [...(t.owners || []), { name: assigneeForm.name.trim(), type: assigneeForm.type }];
+                      return { ...t, owners: updatedOwners };
+                    }
+                    return t;
+                  }));
+                  setAssignModalTask(null);
+                }}
+                style={{ background: '#0D9488', borderColor: '#0D9488' }}
+              >
+                Assign
+              </button>
             </div>
           </div>
         )}

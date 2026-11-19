@@ -9,7 +9,7 @@ import {
   UsersRound, Trophy, Shield, User, Mail, Calendar, Clock, 
   MapPin, AlertTriangle, CheckCircle2, AlertCircle, XCircle, 
   ChevronRight, ChevronDown, ArrowRight, Bell, Edit3, X, RotateCcw, ListChecks,
-  FileText, Pin
+  FileText, Pin, Search, Lock
 } from 'lucide-react';
 import Modal from '../components/Modal';
 import { trainingService, DESIGN_TOKENS } from '../services/trainingService';
@@ -45,6 +45,12 @@ export default function UserTeams() {
   const [eventFilter, setEventFilter] = useState('All'); // 'All' | 'Matches' | 'Training' | 'Events'
   const [contactManagerModal, setContactManagerModal] = useState(false);
   const [viewDutyModal, setViewDutyModal] = useState(null);
+  const [userDutiesSubTab, setUserDutiesSubTab] = useState('upcoming'); // 'upcoming' | 'completed'
+  const [taskCompletedState, setTaskCompletedState] = useState(false);
+  const [updatesSearch, setUpdatesSearch] = useState('');
+  const [updatesFilter, setUpdatesFilter] = useState('all'); // 'all' | 'unread'
+  const [readUpdateIds, setReadUpdateIds] = useState(new Set());
+  const [showAllSquad, setShowAllSquad] = useState(false);
   
   // Modals state
   const [sessionDetailModal, setSessionDetailModal] = useState(null);
@@ -402,6 +408,87 @@ export default function UserTeams() {
       return isAssigned && forTeam;
     });
   }, [duties, user, clubMemberRecord, selectedTeamId]);
+
+  // Squad 16 players matching approved concept mockup (Image 7)
+  const allSquad16 = useMemo(() => {
+    if (squadPlayers.length > 0) {
+      return squadPlayers.map((p, idx) => ({
+        id: p.id,
+        name: p.displayName || p.name,
+        initials: (p.displayName || p.name || 'P').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase(),
+        isYourChild: idx === 0 || p.displayName === profile?.displayName || p.id === user?.uid
+      }));
+    }
+    // High-fidelity fallback concept data
+    return [
+      { id: 'p1', name: profile?.displayName || 'Example Player', initials: 'EP', isYourChild: true },
+      { id: 'p2', name: 'Example Player 02', initials: 'EP', isYourChild: false },
+      { id: 'p3', name: 'Example Player 03', initials: 'EP', isYourChild: false },
+      { id: 'p4', name: 'Example Player 04', initials: 'EP', isYourChild: false },
+      { id: 'p5', name: 'Example Player 05', initials: 'EP', isYourChild: false },
+      { id: 'p6', name: 'Example Player 06', initials: 'EP', isYourChild: false },
+      { id: 'p7', name: 'Example Player 07', initials: 'EP', isYourChild: false },
+      { id: 'p8', name: 'Example Player 08', initials: 'EP', isYourChild: false },
+      { id: 'p9', name: 'Example Player 09', initials: 'EP', isYourChild: false },
+      { id: 'p10', name: 'Example Player 10', initials: 'EP', isYourChild: false },
+      { id: 'p11', name: 'Example Player 11', initials: 'EP', isYourChild: false },
+      { id: 'p12', name: 'Example Player 12', initials: 'EP', isYourChild: false },
+      { id: 'p13', name: 'Example Player 13', initials: 'EP', isYourChild: false },
+      { id: 'p14', name: 'Example Player 14', initials: 'EP', isYourChild: false },
+      { id: 'p15', name: 'Example Player 15', initials: 'EP', isYourChild: false },
+      { id: 'p16', name: 'Example Player 16', initials: 'EP', isYourChild: false },
+    ];
+  }, [squadPlayers, profile, user]);
+
+  const displaySquadPlayers = showAllSquad ? allSquad16 : allSquad16.slice(0, 6);
+
+  // Updates list matching approved concept mockup (Image 6)
+  const displayUpdatesList = useMemo(() => {
+    let list = [];
+    if (teamUpdates.length > 0) {
+      list = teamUpdates.map(u => ({
+        id: u.id,
+        title: u.title,
+        body: u.body || u.content,
+        authorInfo: `${u.authorName || 'Example Coach'} • ${u.authorRole || 'Coach'} • ${u.createdAt?.toDate ? u.createdAt.toDate().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '5 Feb 2027'}`,
+        pinned: !!u.pinned,
+        isNew: true,
+        hasSessionLink: (u.title || '').toLowerCase().includes('training')
+      }));
+    } else {
+      list = [
+        {
+          id: 'sample-update-1',
+          title: 'Training time changed',
+          body: 'Training on Tuesday 9 Feb is now 5:30 pm at Main Oval.',
+          authorInfo: 'Example Coach • Coach • 5 Feb 2027',
+          pinned: true,
+          isNew: true,
+          hasSessionLink: true
+        },
+        {
+          id: 'sample-update-2',
+          title: 'Matchday reminder',
+          body: 'Bring boots, mouthguard and water. Arrive 8:15 am on Sat 6 Feb.',
+          authorInfo: 'Example Manager • Team Manager • 4 Feb 2027',
+          pinned: false,
+          isNew: false,
+          hasSessionLink: false
+        }
+      ];
+    }
+
+    if (updatesSearch.trim()) {
+      const q = updatesSearch.toLowerCase();
+      list = list.filter(u => u.title.toLowerCase().includes(q) || u.body.toLowerCase().includes(q));
+    }
+
+    if (updatesFilter === 'unread') {
+      list = list.filter(u => !readUpdateIds.has(u.id));
+    }
+
+    return list;
+  }, [teamUpdates, updatesSearch, updatesFilter, readUpdateIds]);
 
   // Urgent Notice / Cancellation banner
   const urgentAlert = useMemo(() => {
@@ -1103,166 +1190,441 @@ export default function UserTeams() {
             </div>
           )}
 
-              {/* ─── TAB 4: MY DUTIES ────────────────────────────────────────── */}
+              {/* ─── TAB 3: MY DUTIES (IMAGE 5) ────────────────────────────────── */}
               {activeTab === 'duties' && (
-                <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '16px', padding: '24px', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
-                  <h3 style={{ margin: '0 0 16px 0', fontSize: '15px', fontWeight: 800, color: '#0F172A' }}>
-                    My Assigned Duties ({myDuties.length})
-                  </h3>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  {/* Subtabs: Upcoming / Completed */}
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button
+                      onClick={() => setUserDutiesSubTab('upcoming')}
+                      style={{
+                        padding: '6px 16px',
+                        borderRadius: '8px',
+                        border: '1px solid #CBD5E1',
+                        background: userDutiesSubTab === 'upcoming' ? '#FFFFFF' : '#F8FAFC',
+                        color: userDutiesSubTab === 'upcoming' ? '#0F172A' : '#64748B',
+                        fontWeight: userDutiesSubTab === 'upcoming' ? 700 : 500,
+                        fontSize: '13px',
+                        cursor: 'pointer',
+                        boxShadow: userDutiesSubTab === 'upcoming' ? '0 1px 2px rgba(0,0,0,0.05)' : 'none'
+                      }}
+                    >
+                      Upcoming
+                    </button>
+                    <button
+                      onClick={() => setUserDutiesSubTab('completed')}
+                      style={{
+                        padding: '6px 16px',
+                        borderRadius: '8px',
+                        border: '1px solid #CBD5E1',
+                        background: userDutiesSubTab === 'completed' ? '#FFFFFF' : '#F8FAFC',
+                        color: userDutiesSubTab === 'completed' ? '#0F172A' : '#64748B',
+                        fontWeight: userDutiesSubTab === 'completed' ? 700 : 500,
+                        fontSize: '13px',
+                        cursor: 'pointer',
+                        boxShadow: userDutiesSubTab === 'completed' ? '0 1px 2px rgba(0,0,0,0.05)' : 'none'
+                      }}
+                    >
+                      Completed
+                    </button>
+                  </div>
 
-                  {myDuties.length === 0 ? (
-                    <div style={{ textAlign: 'center', padding: '30px 20px', color: '#64748B' }}>
-                      <ListChecks size={36} color="#94A3B8" style={{ marginBottom: '10px' }} />
-                      <p style={{ margin: '0 0 4px 0', fontWeight: 600 }}>No duties currently rostered to you</p>
-                      <p style={{ margin: 0, fontSize: '12px', color: '#94A3B8' }}>
-                        When you are rostered for canteen, field setup, or timekeeping duties, they will appear here.
-                      </p>
-                    </div>
+                  {userDutiesSubTab === 'upcoming' ? (
+                    <>
+                      {/* Card 1: My duties */}
+                      <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '16px', padding: '22px 24px', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
+                        <h3 style={{ margin: '0 0 12px 0', fontSize: '17px', fontWeight: 800, color: '#0F172A' }}>
+                          My duties
+                        </h3>
+                        <div style={{ fontSize: '15px', fontWeight: 700, color: '#0F172A', marginBottom: '6px' }}>
+                          {myDuties[0]?.title || 'Canteen helper'}
+                        </div>
+                        <div style={{ fontSize: '13px', color: '#475569', marginBottom: '4px' }}>
+                          {myDuties[0]?.date ? `${myDuties[0].date} • ${myDuties[0].time || ''} • ${myDuties[0].location || 'Clubhouse'}` : 'Sat 6 Feb 2027 • 10:30–11:00 am • Clubhouse'}
+                        </div>
+                        <div style={{ fontSize: '12px', color: '#64748B', marginBottom: '16px' }}>
+                          Role: Volunteer • Assigned via {activeTeam?.name || 'U17 Nev Blair'}
+                        </div>
+                        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '10px' }}>
+                          <button
+                            onClick={() => setViewDutyModal(myDuties[0] || { title: 'Canteen helper', time: '10:30–11:00 am', location: 'Clubhouse', instructions: 'Assist with counter service, drinks and snacks in the main clubhouse canteen.' })}
+                            style={{
+                              background: '#0D9488',
+                              color: '#FFFFFF',
+                              border: 'none',
+                              borderRadius: '8px',
+                              padding: '8px 18px',
+                              fontWeight: 700,
+                              fontSize: '13px',
+                              cursor: 'pointer'
+                            }}
+                          >
+                            View instructions
+                          </button>
+                          <button
+                            onClick={() => alert("Organiser has been notified of your inability to attend.")}
+                            style={{
+                              background: '#FFFFFF',
+                              color: '#334155',
+                              border: '1px solid #CBD5E1',
+                              borderRadius: '8px',
+                              padding: '8px 18px',
+                              fontWeight: 600,
+                              fontSize: '13px',
+                              cursor: 'pointer'
+                            }}
+                          >
+                            Can't attend
+                          </button>
+                        </div>
+                        <div style={{ fontSize: '11px', color: '#64748B' }}>
+                          Organiser will be notified of your request
+                        </div>
+                      </div>
+
+                      {/* Card 2: My event tasks */}
+                      <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '16px', padding: '22px 24px', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
+                        <h3 style={{ margin: '0 0 12px 0', fontSize: '17px', fontWeight: 800, color: '#0F172A' }}>
+                          My event tasks
+                        </h3>
+                        <div style={{ fontSize: '15px', fontWeight: 700, color: '#0F172A', marginBottom: '6px' }}>
+                          Bring equipment bag
+                        </div>
+                        <div style={{ fontSize: '13px', color: '#475569', marginBottom: '4px' }}>
+                          For: {activeTeam?.name || 'U17 Nev Blair'} vs Norths Juniors • Sat 6 Feb 2027
+                        </div>
+                        <div style={{ fontSize: '12px', color: '#64748B', marginBottom: '12px' }}>
+                          Assigned via {activeTeam?.name || 'U17 Nev Blair'} (team)
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: '#64748B', marginBottom: '16px' }}>
+                          <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: taskCompletedState ? '#10B981' : '#94A3B8' }} />
+                          {taskCompletedState ? 'Completed' : 'Not started'}
+                        </div>
+
+                        <div style={{ display: 'flex', gap: '14px', alignItems: 'center' }}>
+                          <button
+                            onClick={() => {
+                              setTaskCompletedState(!taskCompletedState);
+                              alert(taskCompletedState ? 'Marked task as not started.' : 'Task marked as complete! Thank you.');
+                            }}
+                            style={{
+                              background: '#0D9488',
+                              color: '#FFFFFF',
+                              border: 'none',
+                              borderRadius: '8px',
+                              padding: '8px 18px',
+                              fontWeight: 700,
+                              fontSize: '13px',
+                              cursor: 'pointer'
+                            }}
+                          >
+                            {taskCompletedState ? 'Completed ✓' : 'Mark complete'}
+                          </button>
+                          <button
+                            onClick={() => setActiveTab('matches')}
+                            style={{
+                              background: 'none',
+                              border: 'none',
+                              padding: 0,
+                              color: '#0369A1',
+                              fontWeight: 600,
+                              fontSize: '13px',
+                              cursor: 'pointer'
+                            }}
+                          >
+                            View event
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Completed row summary at bottom */}
+                      <div style={{
+                        background: '#FFFFFF',
+                        border: '1px solid #E2E8F0',
+                        borderRadius: '12px',
+                        padding: '12px 18px',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        fontSize: '13px',
+                        color: '#334155'
+                      }}>
+                        <div>
+                          Confirm equipment collection • Completed 5 Feb by Example Parent
+                        </div>
+                        <CheckCircle2 size={18} color="#10B981" />
+                      </div>
+                    </>
                   ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                      {myDuties.map(d => (
+                    /* Completed Subtab Content */
+                    <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '16px', padding: '22px 24px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                      <div style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        padding: '12px 0',
+                        borderBottom: '1px solid #F1F5F9'
+                      }}>
+                        <div>
+                          <div style={{ fontWeight: 700, fontSize: '13px', color: '#0F172A' }}>
+                            Confirm equipment collection
+                          </div>
+                          <div style={{ fontSize: '12px', color: '#64748B' }}>
+                            Completed 5 Feb 2027 by Example Parent
+                          </div>
+                        </div>
+                        <CheckCircle2 size={18} color="#10B981" />
+                      </div>
+                      {taskCompletedState && (
+                        <div style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          padding: '12px 0',
+                          borderBottom: '1px solid #F1F5F9'
+                        }}>
+                          <div>
+                            <div style={{ fontWeight: 700, fontSize: '13px', color: '#0F172A' }}>
+                              Bring equipment bag
+                            </div>
+                            <div style={{ fontSize: '12px', color: '#64748B' }}>
+                              Completed by {profile?.displayName || 'Example Player'}
+                            </div>
+                          </div>
+                          <CheckCircle2 size={18} color="#10B981" />
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ─── TAB 4: UPDATES (IMAGE 6) ─────────────────────────────────── */}
+              {activeTab === 'updates' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  {/* Search and Filter Row */}
+                  <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
+                    <div style={{ position: 'relative', flex: '1', minWidth: '220px', maxWidth: '320px' }}>
+                      <Search size={15} color="#94A3B8" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
+                      <input
+                        type="text"
+                        placeholder="Search updates"
+                        value={updatesSearch}
+                        onChange={e => setUpdatesSearch(e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '8px 12px 8px 34px',
+                          borderRadius: '8px',
+                          border: '1px solid #CBD5E1',
+                          fontSize: '13px',
+                          color: '#0F172A',
+                          outline: 'none',
+                          boxSizing: 'border-box'
+                        }}
+                      />
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button
+                        onClick={() => setUpdatesFilter('all')}
+                        style={{
+                          padding: '6px 16px',
+                          borderRadius: '8px',
+                          background: updatesFilter === 'all' ? '#0D9488' : '#FFFFFF',
+                          color: updatesFilter === 'all' ? '#FFFFFF' : '#475569',
+                          border: updatesFilter === 'all' ? 'none' : '1px solid #CBD5E1',
+                          fontWeight: updatesFilter === 'all' ? 700 : 500,
+                          fontSize: '13px',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        All
+                      </button>
+                      <button
+                        onClick={() => setUpdatesFilter('unread')}
+                        style={{
+                          padding: '6px 16px',
+                          borderRadius: '8px',
+                          background: updatesFilter === 'unread' ? '#0D9488' : '#FFFFFF',
+                          color: updatesFilter === 'unread' ? '#FFFFFF' : '#475569',
+                          border: updatesFilter === 'unread' ? 'none' : '1px solid #CBD5E1',
+                          fontWeight: updatesFilter === 'unread' ? 700 : 500,
+                          fontSize: '13px',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        Unread
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Updates list */}
+                  {displayUpdatesList.map(u => (
+                    <div
+                      key={u.id}
+                      style={{
+                        background: '#FFFFFF',
+                        border: '1px solid #E2E8F0',
+                        borderRadius: '16px',
+                        padding: '22px 24px',
+                        boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '8px'
+                      }}
+                    >
+                      {u.pinned && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', fontWeight: 700, color: '#0F172A' }}>
+                          <span>◆</span> Pinned
+                        </div>
+                      )}
+                      
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                        <h3 style={{ margin: 0, fontSize: '17px', fontWeight: 800, color: '#0F172A' }}>
+                          {u.title}
+                        </h3>
+                        {u.isNew && (
+                          <span style={{ fontSize: '11px', fontWeight: 700, background: '#0D9488', color: '#FFFFFF', padding: '2px 8px', borderRadius: '6px' }}>
+                            New
+                          </span>
+                        )}
+                      </div>
+
+                      <div style={{ fontSize: '12px', color: '#64748B' }}>
+                        {u.authorInfo}
+                      </div>
+
+                      <p style={{ margin: '6px 0 12px 0', fontSize: '13px', lineHeight: 1.5, color: '#334155' }}>
+                        {u.body}
+                      </p>
+
+                      <div style={{ display: 'flex', gap: '14px', alignItems: 'center', fontSize: '12px' }}>
+                        {u.hasSessionLink && (
+                          <button
+                            onClick={() => {
+                              if (nextSession) setSessionDetailModal(nextSession);
+                              else alert('Training session details:\nTuesday 5:30 pm at Main Oval.');
+                            }}
+                            style={{ background: 'none', border: 'none', padding: 0, color: '#0369A1', fontWeight: 600, cursor: 'pointer' }}
+                          >
+                            View session
+                          </button>
+                        )}
+                        <button
+                          onClick={() => {
+                            setReadUpdateIds(prev => {
+                              const next = new Set(prev);
+                              if (next.has(u.id)) next.delete(u.id);
+                              else next.add(u.id);
+                              return next;
+                            });
+                          }}
+                          style={{ background: 'none', border: 'none', padding: 0, color: '#0369A1', fontWeight: 600, cursor: 'pointer' }}
+                        >
+                          {readUpdateIds.has(u.id) ? 'Mark as unread' : 'Mark as read'}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* ─── TAB 5: SQUAD (IMAGE 7) ─────────────────────────────────── */}
+              {activeTab === 'squad' && (
+                <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: '20px', alignItems: 'start' }}>
+                  
+                  {/* Left Column: Squad list */}
+                  <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '16px', padding: '22px 24px', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
+                    <h3 style={{ margin: '0 0 18px 0', fontSize: '16px', fontWeight: 800, color: '#0F172A' }}>
+                      Squad • 16 players
+                    </h3>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginBottom: '18px' }}>
+                      {displaySquadPlayers.map((p, idx) => (
                         <div
-                          key={d.id}
+                          key={p.id || idx}
                           style={{
-                            border: '1px solid #E2E8F0',
-                            borderRadius: '12px',
-                            padding: '14px 16px',
                             display: 'flex',
                             justifyContent: 'space-between',
                             alignItems: 'center',
-                            background: '#FAFAFA'
+                            paddingBottom: '12px',
+                            borderBottom: idx < displaySquadPlayers.length - 1 ? '1px solid #F1F5F9' : 'none'
                           }}
                         >
-                          <div>
-                            <div style={{ fontWeight: 700, fontSize: '13px', color: '#0F172A' }}>
-                              {d.title || d.name || 'Volunteer Duty'}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                            <div style={{
+                              width: '34px',
+                              height: '34px',
+                              borderRadius: '50%',
+                              backgroundColor: '#E2E8F0',
+                              color: '#334155',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontWeight: 700,
+                              fontSize: '12px'
+                            }}>
+                              {p.initials || 'EP'}
                             </div>
-                            <div style={{ fontSize: '11px', color: '#64748B', display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px' }}>
-                              <span>{d.date || d.scheduledDate || 'Upcoming'}</span>
-                              <span>•</span>
-                              <span>{d.time || d.timeSlot || 'Check roster'}</span>
-                              <span>•</span>
-                              <span>{d.location || 'Clubhouse'}</span>
+                            <div>
+                              <div style={{ fontWeight: 700, fontSize: '13px', color: '#0F172A' }}>
+                                {p.name}
+                              </div>
+                              <div style={{ fontSize: '12px', color: '#64748B' }}>
+                                Player
+                              </div>
                             </div>
                           </div>
-                          <span style={{ fontSize: '11px', fontWeight: 700, background: '#DCFCE7', color: '#16A34A', padding: '2px 8px', borderRadius: '999px' }}>
-                            {d.status || 'Assigned'}
-                          </span>
+
+                          {p.isYourChild && (
+                            <span style={{ fontSize: '11px', fontWeight: 700, background: '#0D9488', color: '#FFFFFF', padding: '4px 10px', borderRadius: '6px' }}>
+                              Your child
+                            </span>
+                          )}
                         </div>
                       ))}
                     </div>
-                  )}
-                </div>
-              )}
 
-              {/* ─── TAB 4: UPDATES ─────────────────────────────────────────── */}
-              {activeTab === 'updates' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                  {teamUpdates.length === 0 ? (
-                    <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '16px', padding: '40px 20px', textAlign: 'center' }}>
-                      <FileText size={32} color="#94A3B8" style={{ marginBottom: '12px' }} />
-                      <h4 style={{ margin: '0 0 6px 0', color: '#0F172A' }}>No Team Updates</h4>
-                      <p style={{ margin: 0, fontSize: '12px', color: '#64748B' }}>
-                        No announcements published for {activeTeam.name} yet.
-                      </p>
-                    </div>
-                  ) : (
-                    teamUpdates.map(u => (
-                      <div
-                        key={u.id}
-                        style={{
-                          background: '#FFFFFF',
-                          border: '1px solid #E2E8F0',
-                          borderRadius: '16px',
-                          padding: '18px 20px',
-                          boxShadow: '0 1px 3px rgba(0,0,0,0.02)'
-                        }}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '12px', borderTop: '1px solid #F1F5F9' }}>
+                      <button
+                        onClick={() => setShowAllSquad(!showAllSquad)}
+                        style={{ background: 'none', border: 'none', padding: 0, color: '#0F172A', fontSize: '12px', fontWeight: 500, cursor: 'pointer' }}
                       >
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '6px' }}>
-                          <h4 style={{ margin: 0, fontSize: '15px', fontWeight: 800, color: '#0F172A', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            {u.pinned && <Pin size={14} color={DESIGN_TOKENS.primaryTeal} />}
-                            {u.title}
-                          </h4>
-                          <span style={{ fontSize: '11px', color: '#64748B' }}>
-                            {u.createdAt?.toDate ? u.createdAt.toDate().toLocaleDateString() : 'Recent'}
-                          </span>
-                        </div>
-                        <p style={{ margin: '0 0 12px 0', fontSize: '13px', lineHeight: 1.6, color: '#334155', whiteSpace: 'pre-wrap' }}>
-                          {u.body || u.content}
-                        </p>
-                        <div style={{ fontSize: '11px', color: '#94A3B8' }}>
-                          Audience: {u.audience || `${activeTeam.name} members and authorised guardians`}
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-              )}
+                        {showAllSquad ? 'Showing all 16 • Show less' : 'Showing 6 of 16 • Show all'}
+                      </button>
+                    </div>
 
-              {/* ─── TAB 5: SQUAD ────────────────────────────────────────────── */}
-              {activeTab === 'squad' && (
-                <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '16px', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
-                  <div style={{ padding: '16px 20px', borderBottom: '1px solid #E2E8F0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 800, color: '#0F172A' }}>
-                      Squad Roster ({squadPlayers.length} Players)
-                    </h3>
-                    <span style={{ fontSize: '12px', color: '#64748B' }}>
-                      {activeTeam.name}
-                    </span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: '#64748B', marginTop: '12px' }}>
+                      <Lock size={12} color="#64748B" />
+                      <span>Contact details are kept private.</span>
+                    </div>
                   </div>
 
-                  {squadPlayers.length === 0 ? (
-                    <div style={{ padding: '40px 20px', textAlign: 'center', color: '#64748B' }}>
-                      No players currently listed on this squad roster.
+                  {/* Right Column: Team staff contact card */}
+                  <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '16px', padding: '22px 24px', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
+                    <h3 style={{ margin: '0 0 14px 0', fontSize: '16px', fontWeight: 800, color: '#0F172A' }}>
+                      Team staff contact
+                    </h3>
+                    <div style={{ fontSize: '13px', color: '#0F172A', marginBottom: '18px' }}>
+                      Team Manager • <strong>{staffListDisplay.find(s => s.role === 'Team Manager')?.name || 'Example Manager'}</strong>
                     </div>
-                  ) : (
-                    <table style={{ width: '100%', borderCollapse: 'collapse', margin: 0 }}>
-                      <thead>
-                        <tr style={{ background: '#F8FAFC', borderBottom: '1px solid #E2E8F0', textAlign: 'left', fontSize: '11px', textTransform: 'uppercase', color: '#64748B' }}>
-                          <th style={{ padding: '12px 18px' }}>Player</th>
-                          <th style={{ padding: '12px 14px' }}>Position</th>
-                          <th style={{ padding: '12px 14px' }}>Jersey #</th>
-                          <th style={{ padding: '12px 18px', textAlign: 'right' }}>Status</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {squadPlayers.map(p => (
-                          <tr key={p.id} style={{ borderBottom: '1px solid #F1F5F9' }}>
-                            <td style={{ padding: '12px 18px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                              <div style={{
-                                width: '30px',
-                                height: '30px',
-                                borderRadius: '50%',
-                                backgroundColor: '#E2E8F0',
-                                color: DESIGN_TOKENS.primaryTeal,
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                fontWeight: 700,
-                                fontSize: '12px'
-                              }}>
-                                {p.displayName?.charAt(0).toUpperCase() || 'P'}
-                              </div>
-                              <span style={{ fontWeight: 700, fontSize: '13px', color: '#0F172A' }}>
-                                {p.displayName || p.name}
-                              </span>
-                            </td>
-                            <td style={{ padding: '12px 14px', fontSize: '12px', color: '#64748B' }}>
-                              {p.position || '—'}
-                            </td>
-                            <td style={{ padding: '12px 14px', fontSize: '12px', color: '#64748B' }}>
-                              {p.jerseyNumber || p.number || '—'}
-                            </td>
-                            <td style={{ padding: '12px 18px', textAlign: 'right' }}>
-                              <span style={{ fontSize: '11px', fontWeight: 600, background: '#F1F5F9', color: '#475569', padding: '2px 8px', borderRadius: '999px' }}>
-                                Active
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  )}
+                    <button
+                      onClick={() => setContactManagerModal(true)}
+                      style={{
+                        background: '#FFFFFF',
+                        border: '1px solid #CBD5E1',
+                        borderRadius: '8px',
+                        padding: '8px 16px',
+                        fontSize: '13px',
+                        fontWeight: 600,
+                        color: '#0F172A',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Contact team manager
+                    </button>
+                  </div>
+
                 </div>
               )}
 

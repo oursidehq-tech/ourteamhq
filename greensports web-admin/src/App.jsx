@@ -23,6 +23,7 @@ import SettingsPage from './pages/SettingsPage';
 import UsersPage from './pages/UsersPage';
 import ReportsPage from './pages/ReportsPage';
 import LeaguePlatform from './pages/LeaguePlatform';
+import EventChecklists from './pages/EventChecklists';
 import Compliance from './pages/Compliance';
 import TrainingCenter from './pages/TrainingCenter';
 import BookingManager from './pages/BookingManager';
@@ -639,6 +640,9 @@ function ProtectedRoutes() {
           <Route path="users" element={<UsersPage />} />
           <Route path="reports" element={<ReportsPage />} />
           <Route path="league-platform" element={<LeaguePlatform />} />
+          <Route path="event-checklist" element={<EventChecklists />} />
+          <Route path="event-checklists" element={<EventChecklists />} />
+          <Route path="checklist-templates" element={<EventChecklists />} />
           <Route path="compliance" element={<Compliance />} />
           <Route path="training-center" element={<TrainingCenter />} />
           <Route path="bookings" element={<BookingManager />} />

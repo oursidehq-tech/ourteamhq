@@ -24,6 +24,7 @@ const adminSections = [
     title: 'League & Performance',
     items: [
       { to: '/league-platform', icon: Trophy, label: 'League Platform', roles: ['Owner', 'Admin', 'Manager', 'Coach'] },
+      { to: '/event-checklist', icon: ListChecks, label: 'Event Checklist', roles: ['Owner', 'Admin', 'Manager'] },
       { to: '/compliance', icon: ShieldCheck, label: 'Compliance', roles: ['Owner', 'Admin', 'Registrar', 'Manager'] },
       { to: '/training-center', icon: BookOpen, label: 'Training Center', roles: ['Owner', 'Admin', 'Coach', 'Manager'] },
       { to: '/bookings', icon: Calendar, label: 'Bookings', roles: ['Owner', 'Admin', 'Manager', 'Coach'] },
