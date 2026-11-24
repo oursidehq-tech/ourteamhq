@@ -239,7 +239,7 @@ export default function UserCompliance() {
 
     setSaving(true);
     try {
-      await complianceService.submitComplianceDocument(selectedClubId, {
+      const newSubmission = {
         uid: activeSubject.id,
         memberId: activeSubject.id,
         userName: activeSubject.name,
@@ -252,8 +252,14 @@ export default function UserCompliance() {
         expiryDate: expiryDate || '',
         expiry: expiryDate || '',
         fileUrl: uploadedUrl,
+        status: 'Pending',
         submittedAt: new Date().toISOString()
-      });
+      };
+
+      await complianceService.submitComplianceDocument(selectedClubId, newSubmission);
+
+      // Update local submissions immediately so UI updates in real-time
+      setSubmissions(prev => [newSubmission, ...prev.filter(s => s.document !== activeReq.name && s.requirementName !== activeReq.name)]);
 
       alert('Document submitted successfully! Sent to club reviewers.');
       setActiveReq(null);
@@ -469,7 +475,10 @@ export default function UserCompliance() {
               <FileUpload
                 accept="application/pdf,image/png,image/jpeg"
                 maxSizeMB={10}
+                title="Select document evidence"
+                subtitle="PDF, JPG or PNG up to 10MB • Camera or file"
                 onFileUploaded={url => setUploadedUrl(url)}
+                onUploadComplete={url => setUploadedUrl(url)}
               />
               {uploadedUrl && (
                 <div style={{ fontSize: '12px', color: '#16A34A', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '6px' }}>

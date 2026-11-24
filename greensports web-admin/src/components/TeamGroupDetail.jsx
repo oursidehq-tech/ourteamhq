@@ -1137,27 +1137,17 @@ export default function TeamGroupDetail({ item, itemType, selectedClubId, onClos
       {/* ─── TAB: MATCHES & EVENTS (IMAGE 3) ─────────────────────────────────── */}
       {activeTab === 'matches' && (
         <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '16px', overflow: 'hidden' }}>
-          <div style={{ padding: '16px 20px', borderBottom: '1px solid #E2E8F0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div>
-              <h3 style={{ margin: '0 0 2px 0', fontSize: '15px', fontWeight: 800 }}>
-                Matches, Training & Team Events
-              </h3>
-              <span style={{ fontSize: '12px', color: '#64748B' }}>
-                One linked event record. Updates also appear in My Teams and Calendar.
-              </span>
-            </div>
-            <div style={{ display: 'flex', gap: '8px' }}>
-              <button 
-                className="btn btn-primary" 
-                onClick={() => {
-                  setEntityForm({ title: '', type: 'match', date: new Date().toISOString().slice(0, 10), location: 'Main Oval' });
-                  setActiveItemModal({ mode: 'add', tab: 'events' });
-                }}
-                style={{ background: DESIGN_TOKENS.primaryTeal, borderColor: DESIGN_TOKENS.primaryTeal, fontSize: '13px' }}
-              >
-                <Plus size={15} style={{ marginRight: 4 }} /> Add event
-              </button>
-            </div>
+          <div style={{ padding: '16px 20px', borderBottom: '1px solid #E2E8F0', display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
+            <button 
+              className="btn btn-primary" 
+              onClick={() => {
+                setEntityForm({ title: '', type: 'match', date: new Date().toISOString().slice(0, 10), location: 'Main Oval' });
+                setActiveItemModal({ mode: 'add', tab: 'events' });
+              }}
+              style={{ background: DESIGN_TOKENS.primaryTeal, borderColor: DESIGN_TOKENS.primaryTeal, fontSize: '13px', borderRadius: '8px' }}
+            >
+              <Plus size={15} style={{ marginRight: 4 }} /> Add event
+            </button>
           </div>
 
           <table style={{ width: '100%', borderCollapse: 'collapse', margin: 0 }}>
@@ -1189,7 +1179,13 @@ export default function TeamGroupDetail({ item, itemType, selectedClubId, onClos
                     {act.type}
                   </td>
                   <td style={{ padding: '12px 14px', fontSize: '12px', color: '#334155' }}>
-                    {act.dateTime}
+                    {act.dateTime === 'Needs date' || act.needsDateBadge ? (
+                      <span style={{ fontSize: '11px', fontWeight: 700, background: '#FEF3C7', color: '#D97706', padding: '2px 8px', borderRadius: '4px' }}>
+                        Needs date
+                      </span>
+                    ) : (
+                      act.dateTime
+                    )}
                   </td>
                   <td style={{ padding: '12px 14px', fontSize: '12px', color: '#64748B' }}>
                     {act.venue}
@@ -1238,7 +1234,7 @@ export default function TeamGroupDetail({ item, itemType, selectedClubId, onClos
                           setActiveItemModal({ mode: 'edit', tab: act.isSession ? 'training' : 'events', data: act.raw });
                         }}
                         className="btn btn-outline"
-                        style={{ padding: '4px 10px', fontSize: '11px' }}
+                        style={{ padding: '4px 10px', fontSize: '11px', borderRadius: '6px' }}
                       >
                         Manage event
                       </button>
@@ -1248,6 +1244,10 @@ export default function TeamGroupDetail({ item, itemType, selectedClubId, onClos
               ))}
             </tbody>
           </table>
+
+          <div style={{ padding: '14px 20px', background: '#FFFFFF', borderTop: '1px solid #F1F5F9', fontSize: '12px', color: '#64748B' }}>
+            One linked event record. Updates also appear in My Teams and Calendar.
+          </div>
         </div>
       )}
 

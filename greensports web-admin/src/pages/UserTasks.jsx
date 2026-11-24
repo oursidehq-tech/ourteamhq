@@ -3,7 +3,7 @@ import { collection, doc, getDocs, updateDoc } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { useClub } from '../context/ClubContext';
 import { useAuth } from '../context/AuthContext';
-import { ListChecks, ClipboardList, CheckCircle, Clock, AlertTriangle, UserCheck, Calendar } from 'lucide-react';
+import { ListChecks, ClipboardList, CheckCircle, Clock, AlertTriangle, UserCheck, Calendar, Info, CheckCircle2 } from 'lucide-react';
 
 export default function UserTasks() {
   const { selectedClubId, selectedClub } = useClub();
@@ -13,6 +13,29 @@ export default function UserTasks() {
   const [rosters, setRosters] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('tasks'); // 'tasks', 'shifts', 'volunteer'
+  const [eventTasksList, setEventTasksList] = useState([
+    {
+      id: 'evt-task-1',
+      title: 'Prepare player packs',
+      source: 'Assigned via U17 Nev Blair team',
+      status: 'not_started',
+      completedBy: null
+    },
+    {
+      id: 'evt-task-2',
+      title: 'Organise volunteers',
+      source: 'Assigned via U13 Managers group',
+      status: 'in_progress',
+      completedBy: null
+    },
+    {
+      id: 'evt-task-3',
+      title: 'Book venue',
+      source: 'Assigned via Committee group',
+      status: 'complete',
+      completedBy: 'Example Coordinator'
+    }
+  ]);
 
   const fetchTasksData = async () => {
     if (!selectedClubId) {
@@ -236,12 +259,115 @@ export default function UserTasks() {
           {activeTab === 'tasks' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               {myTasks.length === 0 ? (
-                <div className="card text-center" style={{ padding: '60px 20px', border: '1px solid var(--border)', background: '#ffffff', borderRadius: '16px' }}>
-                  <CheckCircle size={40} style={{ color: 'var(--primary)', marginBottom: '16px' }} />
-                  <h3 style={{ margin: 0, color: 'var(--text)' }}>All Clear!</h3>
-                  <p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginTop: '6px' }}>
-                    You have no checklist tasks currently assigned to your account. Great job!
-                  </p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                  {/* Top Alert Banner */}
+                  <div style={{
+                    background: '#EFF6FF',
+                    border: '1px solid #BFDBFE',
+                    borderRadius: '10px',
+                    padding: '12px 18px',
+                    fontSize: '13px',
+                    color: '#1E40AF',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px'
+                  }}>
+                    <Info size={16} color="#2563EB" />
+                    <span>New event task assigned: <strong>Prepare player packs</strong> [Example]</span>
+                  </div>
+
+                  {/* Event progress banner */}
+                  <div style={{
+                    background: '#FFFFFF',
+                    border: '1px solid var(--border)',
+                    borderRadius: '12px',
+                    padding: '12px 18px',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.02)'
+                  }}>
+                    <div style={{ fontSize: '13px', color: '#0F172A' }}>
+                      Event: <strong>2027 Season Registration</strong> • <span style={{ color: '#0D9488', fontWeight: 600 }}>{eventTasksList.filter(t => t.status === 'complete').length} of 5 tasks complete</span>
+                    </div>
+                  </div>
+
+                  {/* Task Cards List */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    {eventTasksList.map(task => {
+                      const isComplete = task.status === 'complete';
+                      const isInProgress = task.status === 'in_progress';
+                      return (
+                        <div
+                          key={task.id}
+                          style={{
+                            background: '#FFFFFF',
+                            border: '1px solid var(--border)',
+                            borderRadius: '14px',
+                            padding: '16px 20px',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
+                            flexWrap: 'wrap',
+                            gap: '12px'
+                          }}
+                        >
+                          <div>
+                            <h3 style={{ margin: '0 0 4px 0', fontSize: '15px', fontWeight: 800, color: '#0F172A' }}>
+                              {task.title}
+                            </h3>
+                            <div style={{ fontSize: '12px', color: '#64748B' }}>
+                              {task.source}
+                            </div>
+                          </div>
+
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: 600 }}>
+                              <span style={{
+                                width: '8px',
+                                height: '8px',
+                                borderRadius: '50%',
+                                backgroundColor: isComplete ? '#10B981' : (isInProgress ? '#F59E0B' : '#94A3B8')
+                              }} />
+                              <span style={{ color: isComplete ? '#10B981' : (isInProgress ? '#D97706' : '#64748B') }}>
+                                {isComplete ? 'Complete' : (isInProgress ? 'In progress' : 'Not started')}
+                              </span>
+                            </div>
+
+                            {isComplete ? (
+                              <span style={{ fontSize: '12px', color: '#16A34A', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                <CheckCircle2 size={14} color="#16A34A" /> {task.completedBy ? `Completed by ${task.completedBy}` : 'Completed'}
+                              </span>
+                            ) : (
+                              <button
+                                onClick={() => {
+                                  setEventTasksList(prev => prev.map(t => t.id === task.id ? { ...t, status: 'complete', completedBy: profile?.displayName || 'Example Member' } : t));
+                                }}
+                                style={{
+                                  background: '#FFFFFF',
+                                  border: '1px solid #CBD5E1',
+                                  borderRadius: '8px',
+                                  padding: '6px 14px',
+                                  fontSize: '12px',
+                                  fontWeight: 600,
+                                  color: '#0F172A',
+                                  cursor: 'pointer'
+                                }}
+                              >
+                                Mark complete
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: '#64748B', marginTop: '10px' }}>
+                    <Info size={14} color="#64748B" />
+                    <span>One authorised member can complete a team or group task. Completion records who did it.</span>
+                  </div>
                 </div>
               ) : (
                 myTasks.map(task => {

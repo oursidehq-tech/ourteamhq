@@ -14,14 +14,17 @@ import ImageModal from './ImageModal';
 const FileUpload = ({ 
   onUpload, 
   onUploadComplete,
+  onFileUploaded,
   storagePath = 'uploads/',
-  accept = "image/*, .csv, .xlsx, .pdf", 
+  accept = "image/*, .csv, .xlsx, .pdf, application/pdf", 
   title = "Drop files here or click to upload",
-  subtitle = "Supported formats: Images, CSV, Excel, PDF",
-  maxSize = 15, // MB
+  subtitle = "Supported formats: Images, CSV, Excel, PDF (up to 10MB)",
+  maxSize = 10, // MB
+  maxSizeMB,
   value = null, // Existing file URL if any
-  autoUpload = false // If true, immediately uploads to storageService and emits URL
+  autoUpload = true // Default to true so files are uploaded and URL is emitted
 }) => {
+  const effectiveMaxSize = maxSizeMB || maxSize || 10;
   const [dragActive, setDragActive] = useState(false);
   const [error, setError] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -29,6 +32,7 @@ const FileUpload = ({
   const [previewUrl, setPreviewUrl] = useState(value || null);
   const [previewModalOpen, setPreviewModalOpen] = useState(false);
   const inputRef = useRef(null);
+  const cameraInputRef = useRef(null);
   const cancelTokenRef = useRef(null);
 
   const handleDrag = (e) => {
@@ -73,8 +77,8 @@ const FileUpload = ({
     setError(null);
     const fileSizeMB = file.size / (1024 * 1024);
     
-    if (fileSizeMB > maxSize) {
-      setError(`File size (${fileSizeMB.toFixed(1)}MB) exceeds ${maxSize}MB limit.`);
+    if (fileSizeMB > effectiveMaxSize) {
+      setError(`File size (${fileSizeMB.toFixed(1)}MB) exceeds ${effectiveMaxSize}MB limit.`);
       return;
     }
 
@@ -96,6 +100,7 @@ const FileUpload = ({
         setIsUploading(false);
         setUploadPercent(100);
         if (onUploadComplete) onUploadComplete(res.url, res);
+        if (onFileUploaded) onFileUploaded(res.url, res);
       } catch (err) {
         if (err.name === 'AbortError') {
           setError('Upload cancelled.');
@@ -121,7 +126,9 @@ const FileUpload = ({
     setUploadPercent(0);
     setError(null);
     if (inputRef.current) inputRef.current.value = '';
+    if (cameraInputRef.current) cameraInputRef.current.value = '';
     if (onUploadComplete) onUploadComplete('');
+    if (onFileUploaded) onFileUploaded('');
   };
 
   return (
@@ -150,6 +157,15 @@ const FileUpload = ({
           type="file"
           className="hidden-input"
           accept={accept}
+          onChange={handleChange}
+          style={{ display: 'none' }}
+        />
+        <input
+          ref={cameraInputRef}
+          type="file"
+          className="hidden-input"
+          accept="image/*"
+          capture="environment"
           onChange={handleChange}
           style={{ display: 'none' }}
         />
@@ -194,18 +210,26 @@ const FileUpload = ({
           </div>
         ) : previewUrl ? (
           /* Preview state with View and Remove buttons */
-          <div className="file-preview-card" onClick={e => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px', flexWrap: 'wrap' }}>
-            <div style={{ position: 'relative', width: '80px', height: '80px', borderRadius: '8px', overflow: 'hidden', border: '1px solid var(--border)' }}>
-              <img src={previewUrl} alt="Preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          <div className="file-preview-card" onClick={e => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '14px', flexWrap: 'wrap' }}>
+            <div style={{ position: 'relative', width: '80px', height: '80px', borderRadius: '8px', overflow: 'hidden', border: '1px solid var(--border)', background: '#F8FAFC', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              {previewUrl.includes('.pdf') || previewUrl.startsWith('data:application/pdf') ? (
+                <div style={{ textAlign: 'center', color: '#DC2626' }}>
+                  <span style={{ fontSize: '10px', fontWeight: 800, background: '#FEE2E2', padding: '2px 5px', borderRadius: '4px', display: 'block', marginBottom: '2px' }}>PDF</span>
+                  <span style={{ fontSize: '10px', color: '#64748B' }}>Document</span>
+                </div>
+              ) : (
+                <img src={previewUrl} alt="Preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              )}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'flex-start' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#10b981', fontSize: '12px', fontWeight: 600 }}>
-                <CheckCircle2 size={14} /> Ready
+                <CheckCircle2 size={14} /> File ready to submit
               </div>
               <div style={{ display: 'flex', gap: '8px' }}>
-                <button 
-                  type="button" 
-                  onClick={() => setPreviewModalOpen(true)}
+                <a 
+                  href={previewUrl} 
+                  target="_blank" 
+                  rel="noreferrer"
                   style={{
                     display: 'flex',
                     alignItems: 'center',
@@ -213,15 +237,14 @@ const FileUpload = ({
                     padding: '4px 10px',
                     background: '#e0f2fe',
                     color: '#0284c7',
-                    border: 'none',
                     borderRadius: '6px',
                     fontSize: '11px',
                     fontWeight: 600,
-                    cursor: 'pointer'
+                    textDecoration: 'none'
                   }}
                 >
-                  <Eye size={12} /> View Full
-                </button>
+                  <Eye size={12} /> View File
+                </a>
                 <button 
                   type="button" 
                   onClick={handleRemove}
@@ -262,8 +285,26 @@ const FileUpload = ({
             >
               <Upload size={22} />
             </div>
-            <h4 style={{ fontSize: '14px', fontWeight: '700', margin: '0 0 2px 0' }}>{title}</h4>
-            <p className="text-muted" style={{ fontSize: '12px', margin: 0 }}>{subtitle}</p>
+            <h4 style={{ fontSize: '14px', fontWeight: '700', margin: '0 0 4px 0' }}>{title}</h4>
+            <p className="text-muted" style={{ fontSize: '12px', margin: '0 0 10px 0' }}>{subtitle}</p>
+            <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', alignItems: 'center' }} onClick={e => e.stopPropagation()}>
+              <button
+                type="button"
+                className="btn btn-outline"
+                style={{ fontSize: '11px', padding: '4px 10px', borderRadius: '6px' }}
+                onClick={() => inputRef.current?.click()}
+              >
+                Browse File
+              </button>
+              <button
+                type="button"
+                className="btn btn-outline"
+                style={{ fontSize: '11px', padding: '4px 10px', borderRadius: '6px' }}
+                onClick={() => cameraInputRef.current?.click()}
+              >
+                Take Photo / Camera
+              </button>
+            </div>
             {error && (
               <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', color: '#ef4444', fontSize: '11px' }}>
                 <AlertCircle size={12} /> {error}

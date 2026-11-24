@@ -3,7 +3,7 @@ import { collection, doc, getDocs, updateDoc } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { useClub } from '../context/ClubContext';
 import { useAuth } from '../context/AuthContext';
-import { ChevronLeft, ChevronRight, Calendar, MapPin, Clock, Check, X, HelpCircle, Repeat } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Calendar, MapPin, Clock, Check, X, HelpCircle, Repeat, Info, CheckCircle2 } from 'lucide-react';
 import Modal from '../components/Modal';
 import {
   buildOccurrenceDates,
@@ -26,6 +26,33 @@ export default function UserCalendar() {
   const [activeFilter, setActiveFilter] = useState('All'); // 'All', 'Matches', 'Training', 'Shifts', 'Tasks'
   const [loading, setLoading] = useState(true);
   const [selectedEventDetails, setSelectedEventDetails] = useState(null);
+
+  // Main Subtabs matching Image 9 & 10: 'calendar' | 'tasks'
+  const [mainTab, setMainTab] = useState('tasks');
+  const [viewEventModal, setViewEventModal] = useState(false);
+  const [eventTasksList, setEventTasksList] = useState([
+    {
+      id: 'evt-task-1',
+      title: 'Prepare player packs',
+      source: 'Assigned via U17 Nev Blair team',
+      status: 'not_started',
+      completedBy: null
+    },
+    {
+      id: 'evt-task-2',
+      title: 'Organise volunteers',
+      source: 'Assigned via U13 Managers group',
+      status: 'in_progress',
+      completedBy: null
+    },
+    {
+      id: 'evt-task-3',
+      title: 'Book venue',
+      source: 'Assigned via Committee group',
+      status: 'complete',
+      completedBy: 'Example Coordinator'
+    }
+  ]);
 
   const fetchCalendarData = async () => {
     if (!selectedClubId) {
@@ -410,85 +437,292 @@ export default function UserCalendar() {
     : '';
 
   return (
-    <div style={{ maxWidth: '1500px', margin: '0 auto', padding: '24px' }}>
+    <div style={{ maxWidth: '1500px', margin: '0 auto', padding: '24px', fontFamily: 'Arial, sans-serif' }}>
       
-      {/* Page Header */}
-      <div className="page-header" style={{ marginBottom: '24px' }}>
+      {/* Page Header matching Image 9 & 10 */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
         <div>
-          <h1>Calendar & Duties</h1>
-          <p className="subtitle">Track match schedules, training sessions, shifts, and checklists for {selectedClub?.name}</p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px' }}>
+            <h1 style={{ margin: 0, fontSize: '24px', fontWeight: 800, color: '#0F172A' }}>
+              Calendar & Duties
+            </h1>
+            <span style={{ fontSize: '11px', fontWeight: 800, background: '#1E3A8A', color: '#FFFFFF', padding: '3px 10px', borderRadius: '999px', letterSpacing: '0.05em' }}>
+              USER SPACE
+            </span>
+            <span style={{ fontSize: '11px', fontWeight: 600, background: '#0D9488', color: '#FFFFFF', padding: '3px 10px', borderRadius: '999px' }}>
+              Concept • Example data
+            </span>
+          </div>
+          <p style={{ margin: 0, fontSize: '13px', color: '#64748B' }}>
+            Your team fixtures, volunteer duties and club events
+          </p>
+        </div>
+
+        {/* Subtabs: Calendar | My Tasks */}
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button
+            onClick={() => setMainTab('calendar')}
+            style={{
+              padding: '8px 18px',
+              borderRadius: '8px',
+              border: '1px solid #CBD5E1',
+              background: mainTab === 'calendar' ? '#0F172A' : '#FFFFFF',
+              color: mainTab === 'calendar' ? '#FFFFFF' : '#475569',
+              fontSize: '13px',
+              fontWeight: mainTab === 'calendar' ? 700 : 500,
+              cursor: 'pointer'
+            }}
+          >
+            Calendar
+          </button>
+          <button
+            onClick={() => setMainTab('tasks')}
+            style={{
+              padding: '8px 18px',
+              borderRadius: '8px',
+              border: '1px solid #CBD5E1',
+              background: mainTab === 'tasks' ? '#0F172A' : '#FFFFFF',
+              color: mainTab === 'tasks' ? '#FFFFFF' : '#475569',
+              fontSize: '13px',
+              fontWeight: mainTab === 'tasks' ? 700 : 500,
+              cursor: 'pointer'
+            }}
+          >
+            My Tasks
+          </button>
         </div>
       </div>
 
-      {/* Navigation Filter Buttons */}
-      <div style={{ display: 'flex', gap: '8px', marginBottom: '20px', overflowX: 'auto', paddingBottom: '4px' }}>
-        {['All', 'Matches', 'Training', 'Shifts', 'Tasks'].map(filter => (
-          <button
-            key={filter}
-            onClick={() => setActiveFilter(filter)}
-            style={{
-              padding: '8px 16px',
-              borderRadius: '12px',
-              border: `1px solid ${activeFilter === filter ? 'var(--primary)' : 'var(--border)'}`,
-              background: activeFilter === filter ? 'var(--primary)' : 'var(--card-bg, #ffffff)',
-              color: activeFilter === filter ? '#ffffff' : 'var(--text-secondary)',
-              fontWeight: 600,
-              fontSize: '13px',
-              cursor: 'pointer',
-              transition: 'all 0.2s',
-              boxShadow: activeFilter === filter ? '0 4px 12px rgba(16, 139, 81, 0.15)' : 'none'
-            }}
-          >
-            {filter}
-          </button>
-        ))}
-      </div>
+      {/* ─── TAB 1: MY TASKS (CONCEPT IMAGE 9 & 10) ─────────────────────────── */}
+      {mainTab === 'tasks' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          
+          {/* Top Notification Pill (Image 9 & 10) */}
+          <div style={{
+            background: '#EFF6FF',
+            border: '1px solid #BFDBFE',
+            borderRadius: '10px',
+            padding: '12px 18px',
+            fontSize: '13px',
+            color: '#1E40AF',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px'
+          }}>
+            <Info size={16} color="#2563EB" />
+            <span>New event task assigned: <strong>Prepare player packs</strong> [Example]</span>
+          </div>
 
-      {/* Colour Legend — pinned at the top so meanings are visible without scrolling */}
-      <div
-        style={{
-          display: 'flex',
-          flexWrap: 'wrap',
-          gap: '10px',
-          marginBottom: '20px',
-          padding: '12px 16px',
-          background: '#ffffff',
-          border: '1px solid var(--border)',
-          borderRadius: '14px',
-          boxShadow: '0 1px 3px rgba(0,0,0,0.04)'
-        }}
-      >
-        <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-secondary)', marginRight: '4px', alignSelf: 'center' }}>
-          Colour key:
-        </span>
-        {[
-          { kind: 'match', label: 'Matches' },
-          { kind: 'training', label: 'Training' },
-          { kind: 'shift', label: 'Duties / Shifts' },
-          { kind: 'task', label: 'My Tasks' },
-        ].map(({ kind, label }) => {
-          const style = KIND_STYLES[kind];
-          return (
-            <span
-              key={kind}
+          {/* Section Heading */}
+          <div style={{ marginTop: '4px' }}>
+            <h2 style={{ fontSize: '18px', fontWeight: 800, margin: '0 0 4px 0', color: '#0F172A' }}>
+              My Event Tasks
+            </h2>
+            <p style={{ margin: 0, fontSize: '13px', color: '#64748B' }}>
+              Tasks assigned to you directly or through your team or group
+            </p>
+          </div>
+
+          {/* Event progress banner */}
+          <div style={{
+            background: '#FFFFFF',
+            border: '1px solid #E2E8F0',
+            borderRadius: '12px',
+            padding: '12px 18px',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.02)'
+          }}>
+            <div style={{ fontSize: '13px', color: '#0F172A' }}>
+              Event: <strong>2027 Season Registration</strong> • <span style={{ color: '#0D9488', fontWeight: 600 }}>{eventTasksList.filter(t => t.status === 'complete').length} of 5 tasks complete</span>
+            </div>
+            <button
+              onClick={() => setViewEventModal(true)}
               style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '6px',
-                background: style.bg,
-                color: style.text,
-                borderLeft: `4px solid ${style.bar}`,
-                borderRadius: '8px',
-                padding: '4px 12px',
-                fontSize: '12px',
-                fontWeight: 600
+                background: 'none',
+                border: 'none',
+                padding: 0,
+                color: '#0284C7',
+                fontSize: '13px',
+                fontWeight: 600,
+                cursor: 'pointer'
               }}
             >
-              {label}
+              View event
+            </button>
+          </div>
+
+          {/* Task Cards List */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            {eventTasksList.map(task => {
+              const isComplete = task.status === 'complete';
+              const isInProgress = task.status === 'in_progress';
+              return (
+                <div
+                  key={task.id}
+                  style={{
+                    background: '#FFFFFF',
+                    border: '1px solid #E2E8F0',
+                    borderRadius: '14px',
+                    padding: '16px 20px',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
+                    flexWrap: 'wrap',
+                    gap: '12px'
+                  }}
+                >
+                  <div>
+                    <h3 style={{ margin: '0 0 4px 0', fontSize: '15px', fontWeight: 800, color: '#0F172A' }}>
+                      {task.title}
+                    </h3>
+                    <div style={{ fontSize: '12px', color: '#64748B' }}>
+                      {task.source}
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+                    {/* Status Dot */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: 600 }}>
+                      <span style={{
+                        width: '8px',
+                        height: '8px',
+                        borderRadius: '50%',
+                        backgroundColor: isComplete ? '#10B981' : (isInProgress ? '#F59E0B' : '#94A3B8')
+                      }} />
+                      <span style={{ color: isComplete ? '#10B981' : (isInProgress ? '#D97706' : '#64748B') }}>
+                        {isComplete ? 'Complete' : (isInProgress ? 'In progress' : 'Not started')}
+                      </span>
+                    </div>
+
+                    {/* Action button */}
+                    {isComplete ? (
+                      <span style={{ fontSize: '12px', color: '#16A34A', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                        <CheckCircle2 size={14} color="#16A34A" /> {task.completedBy ? `Completed by ${task.completedBy}` : 'Completed'}
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => {
+                          setEventTasksList(prev => prev.map(t => t.id === task.id ? { ...t, status: 'complete', completedBy: profile?.displayName || 'Example Member' } : t));
+                        }}
+                        style={{
+                          background: '#FFFFFF',
+                          border: '1px solid #CBD5E1',
+                          borderRadius: '8px',
+                          padding: '6px 14px',
+                          fontSize: '12px',
+                          fontWeight: 600,
+                          color: '#0F172A',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        Mark complete
+                      </button>
+                    )}
+
+                    <button
+                      onClick={() => setViewEventModal(true)}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        padding: 0,
+                        color: '#0284C7',
+                        fontSize: '12px',
+                        fontWeight: 600,
+                        cursor: 'pointer'
+                      }}
+                    >
+                      View event
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Footer Note matching Image 10 */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: '#64748B', marginTop: '14px' }}>
+            <Info size={14} color="#64748B" />
+            <span>One authorised member can complete a team or group task. Completion records who did it.</span>
+          </div>
+
+        </div>
+      )}
+
+      {/* ─── TAB 2: CALENDAR VIEW ───────────────────────────────────────────── */}
+      {mainTab === 'calendar' && (
+        <div>
+          {/* Navigation Filter Buttons */}
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '20px', overflowX: 'auto', paddingBottom: '4px' }}>
+            {['All', 'Matches', 'Training', 'Shifts', 'Tasks'].map(filter => (
+              <button
+                key={filter}
+                onClick={() => setActiveFilter(filter)}
+                style={{
+                  padding: '8px 16px',
+                  borderRadius: '12px',
+                  border: `1px solid ${activeFilter === filter ? 'var(--primary)' : 'var(--border)'}`,
+                  background: activeFilter === filter ? 'var(--primary)' : 'var(--card-bg, #ffffff)',
+                  color: activeFilter === filter ? '#ffffff' : 'var(--text-secondary)',
+                  fontWeight: 600,
+                  fontSize: '13px',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                  boxShadow: activeFilter === filter ? '0 4px 12px rgba(16, 139, 81, 0.15)' : 'none'
+                }}
+              >
+                {filter}
+              </button>
+            ))}
+          </div>
+
+          {/* Colour Legend — pinned at the top so meanings are visible without scrolling */}
+          <div
+            style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: '10px',
+              marginBottom: '20px',
+              padding: '12px 16px',
+              background: '#ffffff',
+              border: '1px solid var(--border)',
+              borderRadius: '14px',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.04)'
+            }}
+          >
+            <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-secondary)', marginRight: '4px', alignSelf: 'center' }}>
+              Colour key:
             </span>
-          );
-        })}
-      </div>
+            {[
+              { kind: 'match', label: 'Matches' },
+              { kind: 'training', label: 'Training' },
+              { kind: 'shift', label: 'Duties / Shifts' },
+              { kind: 'task', label: 'My Tasks' },
+            ].map(({ kind, label }) => {
+              const style = KIND_STYLES[kind];
+              return (
+                <span
+                  key={kind}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    background: style.bg,
+                    color: style.text,
+                    borderLeft: `4px solid ${style.bar}`,
+                    borderRadius: '8px',
+                    padding: '4px 12px',
+                    fontSize: '12px',
+                    fontWeight: 600
+                  }}
+                >
+                  {label}
+                </span>
+              );
+            })}
+          </div>
 
       {/* Grid: Full-width month calendar, agenda below */}
       <div className="dashboard-grid" style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '24px' }}>
@@ -904,6 +1138,83 @@ export default function UserCalendar() {
         </div>
 
       </div>
+      </div>
+      )}
+
+      {/* ─── 2027 Season Registration Event Modal (Image 9 & 10) ─────────────── */}
+      <Modal open={viewEventModal} onClose={() => setViewEventModal(false)} title="Event Details">
+        <div style={{ padding: '6px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+            <span style={{ fontSize: '11px', fontWeight: 700, background: '#0D9488', color: '#FFFFFF', padding: '3px 10px', borderRadius: '6px' }}>
+              Registration
+            </span>
+            <span style={{ fontSize: '11px', fontWeight: 600, background: '#DCFCE7', color: '#166534', padding: '3px 10px', borderRadius: '6px' }}>
+              Published
+            </span>
+          </div>
+
+          <h2 style={{ fontSize: '20px', fontWeight: 800, margin: '0 0 8px 0', color: '#0F172A' }}>
+            2027 Season Registration
+          </h2>
+          <p style={{ margin: '0 0 16px 0', fontSize: '13px', color: '#64748B' }}>
+            Preseason registration day for all existing and new junior & senior players.
+          </p>
+
+          <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '12px', padding: '14px 16px', marginBottom: '18px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', fontSize: '13px' }}>
+              <div>
+                <span style={{ color: '#64748B', fontSize: '11px', textTransform: 'uppercase', fontWeight: 700 }}>Date & Time</span>
+                <div style={{ fontWeight: 700, color: '#0F172A', marginTop: '2px' }}>Sat 6 Feb 2027, 9:00 am – 2:00 pm</div>
+              </div>
+              <div>
+                <span style={{ color: '#64748B', fontSize: '11px', textTransform: 'uppercase', fontWeight: 700 }}>Venue</span>
+                <div style={{ fontWeight: 700, color: '#0F172A', marginTop: '2px' }}>Main Clubhouse & Grounds</div>
+              </div>
+            </div>
+            <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: '1px solid #E2E8F0', fontSize: '12px', color: '#475569' }}>
+              <strong>Audience:</strong> All club members (Who can see this event — not task owners)
+            </div>
+          </div>
+
+          <h3 style={{ fontSize: '15px', fontWeight: 800, margin: '0 0 10px 0', color: '#0F172A' }}>
+            Event Checklist Tasks
+          </h3>
+          <div style={{ border: '1px solid #E2E8F0', borderRadius: '10px', overflow: 'hidden', marginBottom: '18px' }}>
+            {[
+              { task: 'Book venue', owner: 'Committee', status: 'Complete', by: 'Example Coordinator' },
+              { task: 'Set up online registration', owner: 'Example Admin', status: 'In progress' },
+              { task: 'Organise volunteers', owner: 'U13 Managers group', status: 'In progress' },
+              { task: 'Prepare player packs', owner: 'U17 Nev Blair team', status: eventTasksList.find(t => t.id === 'evt-task-1')?.status === 'complete' ? 'Complete' : 'Not started' },
+              { task: 'Confirm first aid cover', owner: 'Club First Aid Officer', status: 'Not started' },
+            ].map((t, idx) => (
+              <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', borderBottom: idx < 4 ? '1px solid #F1F5F9' : 'none', fontSize: '12px' }}>
+                <div>
+                  <strong style={{ color: '#0F172A' }}>{t.task}</strong>
+                  <div style={{ color: '#64748B', fontSize: '11px' }}>{t.owner}</div>
+                </div>
+                <div>
+                  <span style={{
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    padding: '2px 8px',
+                    borderRadius: '4px',
+                    background: t.status === 'Complete' ? '#DCFCE7' : t.status === 'In progress' ? '#FEF3C7' : '#F1F5F9',
+                    color: t.status === 'Complete' ? '#166534' : t.status === 'In progress' ? '#B45309' : '#64748B'
+                  }}>
+                    {t.status}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+            <button className="btn btn-outline" onClick={() => setViewEventModal(false)} style={{ borderRadius: '8px', fontSize: '13px' }}>
+              Close
+            </button>
+          </div>
+        </div>
+      </Modal>
 
       {/* Event Details Modal */}
       <Modal open={!!selectedEventDetails} onClose={() => setSelectedEventDetails(null)} title={selectedEventDetails?.primaryType || 'Event Details'}>

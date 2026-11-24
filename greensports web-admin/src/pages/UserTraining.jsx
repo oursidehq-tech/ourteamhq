@@ -114,8 +114,9 @@ export default function UserTraining() {
     { drillId: 'drill-3', title: 'Game', durationMins: 20, section: 'game', notes: '' },
     { drillId: 'drill-4', title: 'Cool-down', durationMins: 10, section: 'cooldown', notes: '' },
   ]);
-  const [sharedUsers, setSharedUsers] = useState(['Example Coach A']); // array of strings or { id, name }
-  const [sharedGroups, setSharedGroups] = useState(['U17 Coaching Group']);
+  // Plan access selections (Starts empty = Private by default as required by specification)
+  const [sharedUsers, setSharedUsers] = useState([]);
+  const [sharedGroups, setSharedGroups] = useState([]);
   const [selectedSessionTeamId, setSelectedSessionTeamId] = useState('');
 
   // Modals
@@ -150,7 +151,14 @@ export default function UserTraining() {
 
       setMembers(mSnap.docs.map(d => ({ id: d.id, ...d.data() })));
       setGroups(gSnap.docs.map(d => ({ id: d.id, ...d.data() })));
-      const teamList = tSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+      let teamList = tSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+      if (teamList.length === 0) {
+        teamList = [
+          { id: 'u17-nev-blair', name: 'U17 Nev Blair', ageGroup: 'Under 17' },
+          { id: 'u13-girls', name: 'U13 Girls', ageGroup: 'Community' },
+          { id: 'u13-div1', name: 'U13 Div1', ageGroup: 'U13 Division 1' }
+        ];
+      }
       setTeams(teamList);
       if (teamList.length > 0 && !selectedSessionTeamId) {
         setSelectedSessionTeamId(teamList[0].id);
@@ -565,7 +573,10 @@ export default function UserTraining() {
               </div>
 
               <div style={{ fontSize: '12px', color: '#64748B', marginBottom: '10px' }}>
-                Shared with {sharedUsers.length + sharedGroups.length} selections
+                {sharedUsers.length + sharedGroups.length === 0
+                  ? 'Private — Only you and club administrators can access'
+                  : `Shared with ${sharedUsers.length + sharedGroups.length} selection${(sharedUsers.length + sharedGroups.length) > 1 ? 's' : ''}`
+                }
               </div>
 
               <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '6px' }}>
