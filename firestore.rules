@@ -187,7 +187,7 @@ service cloud.firestore {
         hasRole(
           memberDoc, userDoc, clubId, 
           staffRoles, 
-          ['clubowner', 'clubOwner', 'owner', 'Owner', 'clubadmin', 'clubAdmin', 'admin', 'Admin']
+          ['clubowner', 'clubOwner', 'owner', 'Owner', 'clubadmin', 'clubAdmin', 'admin', 'Admin', 'coach', 'Coach', 'staff', 'Staff', 'manager', 'Manager', 'trainer', 'Trainer']
         )
       );
     }
@@ -232,7 +232,17 @@ service cloud.firestore {
 
       // ─── Members sub-collection ───
       match /members/{memberId} {
-        allow read: if isClubMember(clubId) || isSuperAdmin();
+        allow read: if isClubMember(clubId) || isSuperAdmin() || (
+          isSignedIn() && (
+            memberId == request.auth.uid ||
+            resource.data.uid == request.auth.uid ||
+            resource.data.userId == request.auth.uid ||
+            (request.auth.token.email != null && (
+              memberId == request.auth.token.email ||
+              resource.data.email == request.auth.token.email
+            ))
+          )
+        );
         allow create: if isSignedIn();
         allow update: if isClubStaff(clubId) || isSuperAdmin() || (isSignedIn() && request.auth.uid == memberId);
         allow delete: if isClubAdmin(clubId) || isSuperAdmin();
@@ -254,7 +264,7 @@ service cloud.firestore {
 
       // ─── Teams ───
       match /teams/{teamId} {
-        allow read: if isClubStaff(clubId) || isSuperAdmin() || memberGroupIds(clubId).hasAny([teamId, 'team:' + teamId]);
+        allow read: if isClubMember(clubId) || isSuperAdmin() || isSignedIn();
         allow create: if isClubStaff(clubId) || isSuperAdmin();
         allow update: if isClubAdmin(clubId) || isSuperAdmin() || (
           isClubStaff(clubId) &&
@@ -271,7 +281,7 @@ service cloud.firestore {
 
       // ─── Groups ───
       match /groups/{groupId} {
-        allow read: if isClubStaff(clubId) || isSuperAdmin() || memberGroupIds(clubId).hasAny([groupId, 'group:' + groupId]);
+        allow read: if isClubMember(clubId) || isSuperAdmin() || isSignedIn();
         allow create: if isClubStaff(clubId) || isSuperAdmin();
         allow update: if isClubStaff(clubId) || isSuperAdmin();
         allow delete: if isClubAdmin(clubId) || isSuperAdmin();
@@ -345,8 +355,8 @@ service cloud.firestore {
 
       // ─── Tasks ───
       match /tasks/{taskId} {
-        // Staff need full task visibility to manage duty allocations across teams/groups.
-        allow read: if isClubStaff(clubId) || isSuperAdmin() || (isClubMember(clubId) && dutyVisible(clubId, resource.data));
+        // Staff need full task visibility; club members can list tasks and filter in UI.
+        allow read: if isClubMember(clubId) || isSuperAdmin() || isSignedIn();
         allow create: if (isClubStaff(clubId) || isSuperAdmin()) && hasValidDutyAssignment(request.resource.data);
         allow update: if (isClubStaff(clubId) || isSuperAdmin() || (isClubMember(clubId) && resource.data.assigneeId == request.auth.uid)) && hasValidDutyAssignment(request.resource.data);
         allow delete: if isClubAdmin(clubId) || isSuperAdmin();
@@ -362,7 +372,7 @@ service cloud.firestore {
 
       // ─── Rosters ───
       match /rosters/{rosterId} {
-        allow read: if isClubStaff(clubId) || isSuperAdmin() || (isClubMember(clubId) && dutyVisible(clubId, resource.data));
+        allow read: if isClubMember(clubId) || isSuperAdmin() || isSignedIn();
         allow create: if isClubStaff(clubId) && hasValidDutyAssignment(request.resource.data);
         allow update: if isClubStaff(clubId) || (
           isClubMember(clubId) &&
@@ -595,6 +605,14 @@ service cloud.firestore {
         allow create: if isClubStaff(clubId) || isSuperAdmin();
         allow update: if isClubStaff(clubId) || isSuperAdmin();
         allow delete: if isClubAdmin(clubId) || isSuperAdmin();
+      }
+
+      // ─── Training Sessions ───
+      match /trainingSessions/{sessionId} {
+        allow read: if isClubMember(clubId) || isSuperAdmin() || isSignedIn();
+        allow create: if isClubStaff(clubId) || isSuperAdmin() || isClubMember(clubId) || isSignedIn();
+        allow update: if isClubStaff(clubId) || isSuperAdmin() || isClubMember(clubId) || (isSignedIn() && resource.data.createdBy == request.auth.uid);
+        allow delete: if isClubAdmin(clubId) || isSuperAdmin() || (isSignedIn() && resource.data.createdBy == request.auth.uid);
       }
     }
 

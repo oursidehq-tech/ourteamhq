@@ -104,6 +104,63 @@ export default function MembersPage() {
     });
   };
 
+  const syncUserMembership = async (userId, roles, extraFields = {}) => {
+    if (!userId || !selectedClubId || userId.includes('@')) return;
+    try {
+      const userRef = doc(db, 'users', userId);
+      const userSnap = await getDoc(userRef);
+      if (!userSnap.exists()) return;
+
+      const normalizedRoles = Array.isArray(roles) && roles.length > 0 ? roles : ['Player'];
+      const primaryRole = normalizedRoles.includes('Owner')
+        ? 'Owner'
+        : (normalizedRoles.includes('Admin') ? 'Admin' : normalizedRoles[0]);
+
+      const memberships = Array.isArray(userSnap.data().clubMemberships) ? [...userSnap.data().clubMemberships] : [];
+      const existingIdx = memberships.findIndex(m => m.clubId === selectedClubId);
+      const nextEntry = {
+        ...(existingIdx >= 0 ? memberships[existingIdx] : {}),
+        clubId: selectedClubId,
+        clubName: selectedClub?.name || (existingIdx >= 0 ? memberships[existingIdx].clubName : '') || 'Club',
+        role: primaryRole,
+        roles: normalizedRoles,
+        ...extraFields,
+      };
+      if (existingIdx >= 0) memberships[existingIdx] = nextEntry;
+      else memberships.push(nextEntry);
+
+      const accountType = userSnap.data().accountType === 'superadmin'
+        ? 'superadmin'
+        : (normalizedRoles.includes('Owner') ? 'owner' : (normalizedRoles.includes('Admin') ? 'admin' : 'member'));
+
+      await updateDoc(userRef, {
+        uid: userId,
+        clubMemberships: memberships,
+        accountType,
+        updatedAt: serverTimestamp(),
+      });
+    } catch (err) {
+      console.warn('User membership sync failed:', err?.message || err);
+    }
+  };
+
+  const removeUserMembership = async (userId) => {
+    if (!userId || !selectedClubId || userId.includes('@')) return;
+    try {
+      const userRef = doc(db, 'users', userId);
+      const userSnap = await getDoc(userRef);
+      if (!userSnap.exists()) return;
+      const memberships = (userSnap.data().clubMemberships || []).filter(m => m.clubId !== selectedClubId);
+      await updateDoc(userRef, {
+        uid: userId,
+        clubMemberships: memberships,
+        updatedAt: serverTimestamp(),
+      });
+    } catch (err) {
+      console.warn('User membership removal sync failed:', err?.message || err);
+    }
+  };
+
   const handleApproveRequest = async (request) => {
     if (!selectedClubId || !request) return;
     setSaving(true);
@@ -146,17 +203,8 @@ export default function MembersPage() {
         updatedAt: serverTimestamp(),
       });
 
-      // 3. Sync User profile
-      const userRef = doc(db, 'users', userId);
-      const userSnap = await getDoc(userRef);
-      if (userSnap.exists()) {
-        const memberships = userSnap.data().clubMemberships || [];
-        const updated = memberships.map(m =>
-          m.clubId === selectedClubId ? { ...m, role: primaryRole, roles: nextRoles } : m
-        );
-        const accountType = nextRoles.includes('Owner') ? 'owner' : (nextRoles.includes('Admin') ? 'admin' : 'member');
-        await updateDoc(userRef, { clubMemberships: updated, accountType, updatedAt: serverTimestamp() });
-      }
+      // 3. Sync User profile (upsert if missing)
+      await syncUserMembership(userId, nextRoles);
 
       alert('Request approved and role updated.');
       await fetchMembers();
@@ -211,32 +259,10 @@ export default function MembersPage() {
       await batch.commit();
       
       // 4. Sync user profiles (Real-time update for Mobile App)
-      try {
-        // Sync New Owner
-        const newUserRef = doc(db, 'users', newOwnerId);
-        const newUserSnap = await getDoc(newUserRef);
-        if (newUserSnap.exists()) {
-          const memberships = newUserSnap.data().clubMemberships || [];
-          const updated = memberships.map(m =>
-            m.clubId === selectedClubId ? { ...m, role: 'Owner', roles: nextRoles } : m
-          );
-          await updateDoc(newUserRef, { clubMemberships: updated, accountType: 'owner', updatedAt: serverTimestamp() });
-        }
-
-        // Sync Old Owner
-        const oldUserRef = doc(db, 'users', editing.id);
-        const oldUserSnap = await getDoc(oldUserRef);
-        if (oldUserSnap.exists()) {
-          const memberships = oldUserSnap.data().clubMemberships || [];
-          const updated = memberships.map(m =>
-            m.clubId === selectedClubId ? { ...m, role: form.role || 'Player', roles: form.roles } : m
-          );
-          const accountType = form.roles.includes('Owner') ? 'owner' : (form.roles.includes('Admin') ? 'admin' : 'member');
-          await updateDoc(oldUserRef, { clubMemberships: updated, accountType, updatedAt: serverTimestamp() });
-        }
-      } catch (syncErr) {
-        console.warn('Profile sync failed (non-critical):', syncErr);
-      }
+      await Promise.all([
+        syncUserMembership(newOwnerId, nextRoles),
+        syncUserMembership(editing.id, form.roles),
+      ]);
       
       alert('Ownership transferred and profiles synced successfully.');
       setShowTransferModal(false);
@@ -271,17 +297,7 @@ export default function MembersPage() {
       }
 
       await updateDoc(doc(db, 'clubs', selectedClubId, 'members', editing.id), data);
-
-      const userRef = doc(db, 'users', editing.id);
-      const userSnap = await getDoc(userRef);
-      if (userSnap.exists()) {
-        const memberships = userSnap.data().clubMemberships || [];
-        const updated = memberships.map(m =>
-          m.clubId === selectedClubId ? { ...m, role: primaryRole, roles: form.roles } : m
-        );
-        const accountType = form.roles.includes('Owner') ? 'owner' : (form.roles.includes('Admin') ? 'admin' : 'member');
-        await updateDoc(userRef, { clubMemberships: updated, accountType, updatedAt: serverTimestamp() });
-      }
+      await syncUserMembership(editing.id, form.roles);
 
       await fetchMembers();
       setEditing(null);
@@ -302,6 +318,7 @@ export default function MembersPage() {
         batch.update(memberRef, { role, roles: [role], updatedAt: serverTimestamp() });
       }
       await batch.commit();
+      await Promise.all(selectedIds.map(id => syncUserMembership(id, [role])));
       await fetchMembers();
       alert('Bulk role assignment successful.');
     } catch (err) { alert(err.message); }
@@ -319,8 +336,21 @@ export default function MembersPage() {
         batch.delete(doc(db, 'clubs', selectedClubId, 'members', id));
       }
       await batch.commit();
+      await Promise.all(selectedIds.map(id => removeUserMembership(id)));
       await fetchMembers();
       alert('Members removed successfully.');
+    } catch (err) { alert(err.message); }
+    setSaving(false);
+  };
+
+  const handleRemoveMember = async (member) => {
+    if (!member?.id || !selectedClubId) return;
+    if (!window.confirm(`Remove ${member.displayName || member.email || 'this member'} from the club?`)) return;
+    setSaving(true);
+    try {
+      await deleteDoc(doc(db, 'clubs', selectedClubId, 'members', member.id));
+      await removeUserMembership(member.id);
+      await fetchMembers();
     } catch (err) { alert(err.message); }
     setSaving(false);
   };
@@ -384,6 +414,7 @@ export default function MembersPage() {
       }
 
       const batch = writeBatch(db);
+      const importedUsers = [];
       let created = 0;
 
       for (const row of rows) {
@@ -407,6 +438,7 @@ export default function MembersPage() {
           memberRef,
           {
             uid: userId,
+            userId,
             displayName,
             email,
             role: primaryRole,
@@ -419,6 +451,9 @@ export default function MembersPage() {
           },
           { merge: true }
         );
+        if (!userSnap.empty) {
+          importedUsers.push({ userId, roles });
+        }
         created += 1;
       }
 
@@ -428,6 +463,7 @@ export default function MembersPage() {
       }
 
       await batch.commit();
+      await Promise.all(importedUsers.map(({ userId, roles }) => syncUserMembership(userId, roles)));
       await fetchMembers();
       alert(`Imported ${created} members successfully.`);
     } catch (err) {
@@ -555,7 +591,7 @@ export default function MembersPage() {
                   <td>
                     <div className="flex gap-sm">
                       <button className="btn-icon" onClick={() => openEdit(m)} title="Edit Roles"><Edit2 size={15} /></button>
-                      <button className="btn-icon danger" onClick={() => handleBulkRemove()} title="Remove Member"><UserX size={15} /></button>
+                      <button className="btn-icon danger" onClick={() => handleRemoveMember(m)} title="Remove Member"><UserX size={15} /></button>
                     </div>
                   </td>
                 </tr>

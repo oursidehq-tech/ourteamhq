@@ -3,7 +3,7 @@ import { collection, getDocs } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { useClub } from '../context/ClubContext';
 import { useAuth } from '../context/AuthContext';
-import { Users, ShieldCheck, User, Mail, Award } from 'lucide-react';
+import { Users, Shield, ShieldCheck, User, Mail, Award } from 'lucide-react';
 
 export default function UserGroups() {
   const { selectedClubId, selectedClub } = useClub();

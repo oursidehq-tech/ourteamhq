@@ -129,53 +129,6 @@ export default function UserCompliance() {
     };
   }, [viewingTarget, user, profile, clubMemberRecord, myRoles, myTeams, childrenList, teams]);
 
-  const sampleFallbackRequirements = useMemo(() => [
-    {
-      id: 'req-wwcc',
-      name: 'WWCC',
-      fullName: 'Working With Children Check (WWCC)',
-      type: 'Certificate',
-      expiryRequired: true,
-      computedStatus: 'Current',
-      expiryDate: '30 Jun 2027',
-      submittedAt: '7 Nov 2025',
-      submission: { fileUrl: '', document: 'WWCC', status: 'Approved', expiry: '30 Jun 2027' }
-    },
-    {
-      id: 'req-cpr',
-      name: 'CPR Certificate',
-      fullName: 'CPR Certificate (HLTAID009)',
-      type: 'Certificate',
-      expiryRequired: true,
-      computedStatus: 'Expiring soon',
-      expiryDate: '25 Nov 2026',
-      submittedAt: '25 Nov 2024',
-      submission: { fileUrl: '', document: 'CPR Certificate', status: 'Approved', expiry: '25 Nov 2026' }
-    },
-    {
-      id: 'req-firstaid',
-      name: 'First Aid Certificate',
-      fullName: 'First Aid Certificate (HLTAID011)',
-      type: 'Certificate',
-      expiryRequired: true,
-      computedStatus: 'Pending review',
-      expiryDate: '30 Jun 2027',
-      submittedAt: '7 Nov 2026',
-      submission: { fileUrl: '', document: 'First Aid Certificate', status: 'Pending', expiry: '30 Jun 2027' }
-    },
-    {
-      id: 'req-volagreement',
-      name: 'Volunteer Agreement',
-      fullName: 'Volunteer Agreement & Code of Conduct',
-      type: 'Policy Agreement',
-      expiryRequired: false,
-      computedStatus: 'Missing',
-      expiryDate: null,
-      submittedAt: null,
-      submission: null
-    }
-  ], []);
-
   // Standard requirements list for active role
   const requirementsList = useMemo(() => {
     // If club admin defined complianceForms matching role/team, extract requirements
@@ -188,9 +141,6 @@ export default function UserCompliance() {
 
   // Compute status for each requirement
   const computedRequirements = useMemo(() => {
-    if (submissions.length === 0) {
-      return sampleFallbackRequirements;
-    }
     return requirementsList.map(req => {
       const sub = submissions.find(s => 
         (s.document === req.name || s.requirementName === req.name || s.name === req.name) &&
@@ -206,7 +156,7 @@ export default function UserCompliance() {
         submittedAt: sub?.submittedAt || null
       };
     });
-  }, [requirementsList, submissions, viewingTarget, user, clubMemberRecord, sampleFallbackRequirements]);
+  }, [requirementsList, submissions, viewingTarget, user, clubMemberRecord]);
 
   // Summary counts (Concept badges: Current, Pending, Expiring soon, Action required)
   const stats = useMemo(() => {
@@ -283,9 +233,6 @@ export default function UserCompliance() {
             <h1 style={{ margin: 0, fontSize: '24px', fontWeight: 800, color: '#0F172A' }}>
               My Compliance
             </h1>
-            <span style={{ fontSize: '11px', fontWeight: 600, background: '#0D9488', color: '#FFFFFF', padding: '3px 10px', borderRadius: '999px' }}>
-              Concept • Example data
-            </span>
           </div>
           <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: '#64748B' }}>
             Your requirements, documents and upcoming renewals
@@ -439,22 +386,23 @@ export default function UserCompliance() {
 
         </div>
 
-        {/* Right Column: Side Card Update Widget (Image 6) */}
-        <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '16px', padding: '20px', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
-          <div style={{ fontWeight: 700, fontSize: '13px', color: '#0F172A', marginBottom: '4px' }}>
-            Compliance update • Your WWCC has been approved.
+        {/* Right Column: Side Card Update Widget */}
+        {computedRequirements.some(r => r.computedStatus === 'Current' && r.submission) && (
+          <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '16px', padding: '20px', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
+            <div style={{ fontWeight: 700, fontSize: '13px', color: '#0F172A', marginBottom: '4px' }}>
+              Compliance update • Your {computedRequirements.find(r => r.computedStatus === 'Current' && r.submission)?.name} is approved.
+            </div>
+            <button
+              onClick={() => {
+                const item = computedRequirements.find(r => r.computedStatus === 'Current' && r.submission);
+                if (item?.submission) setViewingSub(item.submission);
+              }}
+              style={{ background: 'none', border: 'none', padding: 0, color: '#0D9488', fontWeight: 700, fontSize: '12px', cursor: 'pointer', marginTop: '6px' }}
+            >
+              View requirement
+            </button>
           </div>
-          <button
-            onClick={() => {
-              const wwcc = computedRequirements.find(r => r.name.toLowerCase().includes('wwcc'));
-              if (wwcc?.submission) setViewingSub(wwcc.submission);
-              else alert('WWCC is in valid approved status.');
-            }}
-            style={{ background: 'none', border: 'none', padding: 0, color: '#0D9488', fontWeight: 700, fontSize: '12px', cursor: 'pointer', marginTop: '6px' }}
-          >
-            View requirement
-          </button>
-        </div>
+        )}
 
       </div>
 

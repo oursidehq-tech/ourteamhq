@@ -401,9 +401,6 @@ export default function UserTraining() {
             <h1 style={{ margin: 0, fontSize: '24px', fontWeight: 800, color: '#0F172A' }}>
               Training Center
             </h1>
-            <span style={{ fontSize: '11px', fontWeight: 600, background: '#0D9488', color: '#FFFFFF', padding: '3px 10px', borderRadius: '999px' }}>
-              Concept • Example data
-            </span>
           </div>
           <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: '#64748B' }}>
             Coach workspace
@@ -713,11 +710,18 @@ export default function UserTraining() {
                     background: '#FAFAFA'
                   }}
                 >
-                  <div style={{ width: 44, height: 44, borderRadius: 8, overflow: 'hidden', flexShrink: 0, background: '#0F172A' }}>
+                  <div
+                    onClick={() => setSelectedDrillDetail(drill)}
+                    title="Watch / View drill"
+                    style={{ width: 44, height: 44, borderRadius: 8, overflow: 'hidden', flexShrink: 0, background: '#0F172A', cursor: 'pointer' }}
+                  >
                     <DrillThumb drill={drill} size={44} />
                   </div>
 
-                  <div style={{ flex: 1, minWidth: 0 }}>
+                  <div
+                    onClick={() => setSelectedDrillDetail(drill)}
+                    style={{ flex: 1, minWidth: 0, cursor: 'pointer' }}
+                  >
                     <div style={{ fontWeight: 700, fontSize: '13px', color: '#0F172A', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {drill.title}
                     </div>
@@ -774,7 +778,8 @@ export default function UserTraining() {
             {filteredDrills.map(d => (
               <div
                 key={d.id}
-                style={{ border: '1px solid #E2E8F0', borderRadius: '14px', overflow: 'hidden', background: '#FAFAFA' }}
+                onClick={() => setSelectedDrillDetail(d)}
+                style={{ border: '1px solid #E2E8F0', borderRadius: '14px', overflow: 'hidden', background: '#FAFAFA', cursor: 'pointer' }}
               >
                 <DrillThumb drill={d} size={140} />
                 <div style={{ padding: '12px' }}>
@@ -783,7 +788,8 @@ export default function UserTraining() {
                     {d.category || 'General'} • {d.durationMins || parseDurationToMins(d.duration) || 10} min
                   </div>
                   <button
-                    onClick={() => {
+                    onClick={(e) => {
+                      e.stopPropagation();
                       handleAddDrillToPlan(d);
                       setActiveTab('builder');
                     }}
@@ -1007,6 +1013,88 @@ export default function UserTraining() {
             </button>
           </div>
         </div>
+      </Modal>
+
+      {/* ─── MODAL: DRILL DETAIL / VIDEO PLAYER ──────────────────────────────── */}
+      <Modal
+        title={selectedDrillDetail?.title || 'Training Content'}
+        open={!!selectedDrillDetail}
+        onClose={() => setSelectedDrillDetail(null)}
+        wide={true}
+      >
+        {selectedDrillDetail && (
+          <div>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '16px' }}>
+              <span className="badge badge-info" style={{ textTransform: 'uppercase', fontWeight: 700 }}>
+                {selectedDrillDetail.category || 'General'}
+              </span>
+              <span className="badge badge-default">{selectedDrillDetail.type || 'Drill'}</span>
+              <span className="badge badge-default" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                <Clock size={11} /> {selectedDrillDetail.durationMins || parseDurationToMins(selectedDrillDetail.duration) || 10} min
+              </span>
+            </div>
+
+            <div style={{ background: '#0F172A', borderRadius: 12, overflow: 'hidden', marginBottom: 18 }}>
+              {getYoutubeId(selectedDrillDetail.youtubeUrl) ? (
+                <div style={{ position: 'relative', paddingBottom: '56.25%', height: 0 }}>
+                  <iframe
+                    src={`https://www.youtube.com/embed/${getYoutubeId(selectedDrillDetail.youtubeUrl)}?rel=0`}
+                    title={selectedDrillDetail.title}
+                    style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 'none' }}
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    allowFullScreen
+                  />
+                </div>
+              ) : (selectedDrillDetail.fileUrl && (selectedDrillDetail.fileUrl.match(/\.(mp4|webm|mov)(\?|$)/i) || selectedDrillDetail.type === 'Video')) || selectedDrillDetail.videoUrl ? (
+                <video
+                  controls
+                  src={selectedDrillDetail.fileUrl || selectedDrillDetail.videoUrl}
+                  style={{ width: '100%', maxHeight: 440, display: 'block' }}
+                />
+              ) : (
+                <div style={{ padding: '40px 20px', textAlign: 'center', color: '#fff' }}>
+                  <FileText size={56} style={{ margin: '0 auto 12px', opacity: 0.7 }} />
+                  <h4 style={{ margin: '0 0 10px' }}>{selectedDrillDetail.title}</h4>
+                  {(selectedDrillDetail.fileUrl || selectedDrillDetail.youtubeUrl) && (
+                    <a
+                      href={selectedDrillDetail.fileUrl || selectedDrillDetail.youtubeUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="btn btn-primary"
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                    >
+                      <Download size={14} /> Open Document / Link
+                    </a>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="card" style={{ background: '#F8FAFC', padding: '14px 16px', borderRadius: '10px', border: '1px solid #E2E8F0' }}>
+              <h5 style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 700, color: '#0F172A' }}>Description & Tactical Notes</h5>
+              <p style={{ margin: 0, lineHeight: 1.6, whiteSpace: 'pre-line', fontSize: 13, color: '#334155' }}>
+                {selectedDrillDetail.description || 'No description provided.'}
+              </p>
+            </div>
+
+            <div className="form-actions" style={{ marginTop: '18px' }}>
+              <button
+                className="btn btn-primary"
+                style={{ background: '#0D9488', borderColor: '#0D9488' }}
+                onClick={() => {
+                  const d = selectedDrillDetail;
+                  setSelectedDrillDetail(null);
+                  handleAddDrillToPlan(d);
+                }}
+              >
+                <Plus size={14} /> Add to Plan
+              </button>
+              <button className="btn btn-outline" onClick={() => setSelectedDrillDetail(null)}>
+                Close
+              </button>
+            </div>
+          </div>
+        )}
       </Modal>
 
     </div>

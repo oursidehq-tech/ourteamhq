@@ -140,6 +140,9 @@ export const signUp = async ({
   // This handles the "Transferred Ownership" case where the member was added by email before having a UID.
   try {
     const clubsSnap = await getDocs(collection(db, "clubs"));
+    const mergedMemberships = [...(userDoc.clubMemberships || [])];
+    let matchedAny = false;
+
     for (const clubDoc of clubsSnap.docs) {
       // Skip if we already added them to this club in Step 4
       if (clubDoc.id === clubId) continue;
@@ -157,11 +160,12 @@ export const signUp = async ({
         if (!mSnap.empty) {
           const mDoc = mSnap.docs[0];
           const mData = mDoc.data();
-          
+
           // Link this UID to the member record
           await setDoc(doc(db, "clubs", clubDoc.id, "members", user.uid), {
             ...mData,
             uid: user.uid,
+            userId: user.uid,
             email: email.trim().toLowerCase(), // Use correct spelling
             joinedAt: mData.joinedAt || serverTimestamp(),
             updatedAt: serverTimestamp(),
@@ -172,19 +176,32 @@ export const signUp = async ({
             await deleteDoc(mDoc.ref);
           }
 
-          // Update the user profile doc with memberships
-          const role = mData.role || "Member";
-          const roles = mData.roles || [role];
-          const memberships = [{ clubId: clubDoc.id, clubName: clubDoc.data().name, role, roles }];
-          
-          await updateDoc(doc(db, "users", user.uid), {
-            clubMemberships: memberships,
-            accountType: roles.includes("Owner") ? "owner" : (roles.includes("Admin") ? "admin" : "member"),
-            updatedAt: serverTimestamp(),
-          });
+          // Merge into the user profile doc memberships
+          const memberRole = mData.role || "Member";
+          const memberRoles = Array.isArray(mData.roles) && mData.roles.length > 0 ? mData.roles : [memberRole];
+          if (!mergedMemberships.some((m) => m.clubId === clubDoc.id)) {
+            mergedMemberships.push({
+              clubId: clubDoc.id,
+              clubName: clubDoc.data().name || "Club",
+              role: memberRole,
+              roles: memberRoles,
+            });
+          }
+          matchedAny = true;
           break;
         }
       }
+    }
+
+    if (matchedAny) {
+      const hasOwner = mergedMemberships.some((m) => (m.roles || [m.role]).includes("Owner"));
+      const hasAdmin = mergedMemberships.some((m) => (m.roles || [m.role]).includes("Admin"));
+      await updateDoc(doc(db, "users", user.uid), {
+        uid: user.uid,
+        clubMemberships: mergedMemberships,
+        accountType: hasOwner ? "owner" : (hasAdmin ? "admin" : "member"),
+        updatedAt: serverTimestamp(),
+      });
     }
   } catch (e) {
     console.error("SignUp: Failed to auto-link pending membership:", e.message);

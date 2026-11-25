@@ -13,13 +13,7 @@ export default function EventsPage() {
   const [modal, setModal] = useState(null);
   const [viewingEvent, setViewingEvent] = useState(null);
   const [eventViewTab, setEventViewTab] = useState('checklist'); // 'details' | 'checklist' | 'attendees'
-  const [checklistTasks, setChecklistTasks] = useState([
-    { id: 'ev-t1', title: 'Book venue', owners: [{ name: 'Committee', type: 'group' }, { name: 'Example Coordinator', type: 'user' }], status: 'complete', completedBy: 'Example Coordinator' },
-    { id: 'ev-t2', title: 'Set up online registration', owners: [{ name: 'Example Admin', type: 'user' }], status: 'in_progress' },
-    { id: 'ev-t3', title: 'Organise volunteers', owners: [{ name: 'U13 Managers', type: 'group' }], status: 'not_started' },
-    { id: 'ev-t4', title: 'Prepare player packs', owners: [{ name: 'U17 Nev Blair', type: 'team' }], status: 'not_started' },
-    { id: 'ev-t5', title: 'Confirm first aid cover', owners: [{ name: 'Example Trainer', type: 'user' }], status: 'not_started' },
-  ]);
+  const [checklistTasks, setChecklistTasks] = useState([]);
   const [assignModalTask, setAssignModalTask] = useState(null);
   const [assigneeForm, setAssigneeForm] = useState({ name: '', type: 'user' });
   const [newTaskInput, setNewTaskInput] = useState('');
@@ -481,11 +475,8 @@ export default function EventsPage() {
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
                   <h2 style={{ margin: 0, fontSize: '22px', fontWeight: 800, color: '#0F172A' }}>
-                    {viewingEvent.title || '2027 Season Registration'}
+                    {viewingEvent.title || 'Event'}
                   </h2>
-                  <span style={{ fontSize: '11px', fontWeight: 600, background: '#0D9488', color: '#FFFFFF', padding: '3px 10px', borderRadius: '999px' }}>
-                    Concept • Example data
-                  </span>
                 </div>
                 <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: '#64748B' }}>
                   {viewingEvent.startDate || viewingEvent.date || 'Sat 6 Feb 2027'} • {viewingEvent.time || viewingEvent.startTime || '9:00 am'} • {viewingEvent.location || 'Clubhouse'}
@@ -582,7 +573,7 @@ export default function EventsPage() {
                           if (!newTaskInput.trim()) return;
                           setChecklistTasks(prev => [
                             ...prev,
-                            { id: `ev-t-${Date.now()}`, title: newTaskInput.trim(), owners: [{ name: 'Example Coordinator', type: 'user' }], status: 'not_started' }
+                            { id: `ev-t-${Date.now()}`, title: newTaskInput.trim(), owners: [{ name: 'Coordinator', type: 'user' }], status: 'not_started' }
                           ]);
                           setNewTaskInput('');
                           setShowAddTask(false);
@@ -682,7 +673,7 @@ export default function EventsPage() {
                                   ) : (
                                     <button
                                       onClick={() => {
-                                        setChecklistTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: 'complete', completedBy: 'Example Admin' } : t));
+                                        setChecklistTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: 'complete', completedBy: 'Admin' } : t));
                                       }}
                                       style={{ background: 'none', border: 'none', padding: 0, color: '#0284C7', fontWeight: 600, fontSize: '12px', cursor: 'pointer' }}
                                     >
@@ -804,7 +795,7 @@ export default function EventsPage() {
               <label style={{ fontSize: '12px', fontWeight: 700 }}>Owner Name / Assignee</label>
               <input
                 className="form-control"
-                placeholder="e.g. Example Coordinator / Committee / U17 Nev Blair"
+                placeholder="e.g. Coordinator / Committee / First Aid"
                 value={assigneeForm.name}
                 onChange={e => setAssigneeForm({ ...assigneeForm, name: e.target.value })}
               />

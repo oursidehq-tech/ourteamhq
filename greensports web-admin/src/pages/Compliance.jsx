@@ -169,50 +169,8 @@ const Compliance = () => {
     }
   };
 
-  const sampleRecords = [
-    {
-      id: 'sample-1',
-      name: 'Example Member A',
-      role: 'Volunteer',
-      teamName: 'U17',
-      document: 'First Aid Certificate',
-      requirement: 'First Aid Certificate',
-      type: 'Certificate',
-      submitted: '7 Nov 2026',
-      expiry: '30 Jun 2027',
-      status: 'Awaiting review',
-      fileUrl: ''
-    },
-    {
-      id: 'sample-2',
-      name: 'Example Member B',
-      role: 'Coach',
-      teamName: 'U12',
-      document: 'WWCC',
-      requirement: 'WWCC',
-      type: 'Police Clearance',
-      submitted: '6 Nov 2026',
-      expiry: '14 Mar 2029',
-      status: 'Awaiting review',
-      fileUrl: ''
-    },
-    {
-      id: 'sample-3',
-      name: 'Example Member C',
-      role: 'Committee',
-      teamName: '',
-      document: 'CPR Certificate',
-      requirement: 'CPR Certificate',
-      type: 'Certificate',
-      submitted: '5 Nov 2026',
-      expiry: '5 Nov 2027',
-      status: 'Awaiting review',
-      fileUrl: ''
-    }
-  ];
-
   const filteredData = React.useMemo(() => {
-    let list = complianceData.length > 0 ? complianceData : sampleRecords;
+    let list = complianceData;
     if (filterExpiringSoon) {
       return list.filter(item => complianceService.calculateStatus(item, item) === 'Expiring soon' || item.expiry?.includes('2026'));
     }
@@ -228,10 +186,10 @@ const Compliance = () => {
     return list;
   }, [complianceData, activeTab, filterExpiringSoon]);
 
-  const activeDoc = selectedDoc || (filteredData.length > 0 ? filteredData[0] : sampleRecords[0]);
+  const activeDoc = selectedDoc || (filteredData.length > 0 ? filteredData[0] : null);
 
   const handleExportCSV = () => {
-    const listToExport = complianceData.length > 0 ? complianceData : sampleRecords;
+    const listToExport = complianceData;
     const headers = ['Member', 'Role', 'Team', 'Requirement', 'Submitted', 'Expiry', 'Status'];
     const rows = listToExport.map(r => [
       r.name || '',
@@ -561,9 +519,6 @@ const Compliance = () => {
       <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px', marginBottom: '24px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <h1 style={{ margin: 0, fontSize: '24px', fontWeight: 700, color: '#111827' }}>Compliance & Safety</h1>
-          <span style={{ background: '#042F2E', color: '#5EEAD4', fontSize: '11px', fontWeight: 600, padding: '4px 10px', borderRadius: '6px' }}>
-            Concept • Example data
-          </span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', position: 'relative' }}>
           {/* Export Report Dropdown */}
@@ -817,114 +772,126 @@ const Compliance = () => {
           <div style={{ background: '#fff', borderRadius: '16px', border: '1px solid #E5E7EB', padding: '24px', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
             <h3 style={{ fontSize: '16px', fontWeight: 700, margin: '0 0 16px 0', color: '#111827' }}>Review submission</h3>
             
-            <div style={{ marginBottom: '16px' }}>
-              <div style={{ fontSize: '15px', fontWeight: 600, color: '#111827', marginBottom: '2px' }}>
-                {activeDoc?.name || 'Example Member A'}
-              </div>
-              <div style={{ fontSize: '14px', color: '#374151', marginBottom: '2px' }}>
-                {activeDoc?.document || activeDoc?.requirement || 'First Aid Certificate'}
-              </div>
-              <div style={{ fontSize: '13px', color: '#6B7280' }}>
-                Expiry: {activeDoc?.expiry || '30 Jun 2027'}
-              </div>
-            </div>
+            {activeDoc ? (
+              <>
+                <div style={{ marginBottom: '16px' }}>
+                  <div style={{ fontSize: '15px', fontWeight: 600, color: '#111827', marginBottom: '2px' }}>
+                    {activeDoc.name || activeDoc.memberName || 'Member'}
+                  </div>
+                  <div style={{ fontSize: '14px', color: '#374151', marginBottom: '2px' }}>
+                    {activeDoc.document || activeDoc.requirement || 'Requirement'}
+                  </div>
+                  <div style={{ fontSize: '13px', color: '#6B7280' }}>
+                    Expiry: {activeDoc.expiry || activeDoc.expiryDate || 'No expiry'}
+                  </div>
+                </div>
 
-            {/* PDF Box */}
-            <div style={{
-              background: '#F9FAFB',
-              border: '1px solid #E5E7EB',
-              borderRadius: '12px',
-              padding: '24px 16px',
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              marginBottom: '20px'
-            }}>
-              <div style={{
-                position: 'relative',
-                width: '56px',
-                height: '68px',
-                background: '#fff',
-                border: '1px solid #E5E7EB',
-                borderRadius: '6px',
-                boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                marginBottom: '12px'
-              }}>
-                <span style={{
-                  position: 'absolute',
-                  top: '-6px',
-                  left: '6px',
-                  background: '#EF4444',
-                  color: '#fff',
-                  fontSize: '9px',
-                  fontWeight: 700,
-                  padding: '1px 4px',
-                  borderRadius: '3px'
-                }}>PDF</span>
-                <FileText size={28} color="#DC2626" />
-              </div>
-              <a 
-                href={activeDoc?.fileUrl || '#'} 
-                target="_blank" 
-                rel="noreferrer"
-                style={{
-                  display: 'inline-flex',
+                {/* PDF Box */}
+                <div style={{
+                  background: '#F9FAFB',
+                  border: '1px solid #E5E7EB',
+                  borderRadius: '12px',
+                  padding: '24px 16px',
+                  display: 'flex',
+                  flexDirection: 'column',
                   alignItems: 'center',
-                  gap: '6px',
-                  color: '#0D9488',
-                  fontSize: '13px',
-                  fontWeight: 600,
-                  textDecoration: 'none'
-                }}
-              >
-                <ExternalLink size={14} />
-                <span>View uploaded PDF</span>
-              </a>
-            </div>
+                  justifyContent: 'center',
+                  marginBottom: '20px'
+                }}>
+                  <div style={{
+                    position: 'relative',
+                    width: '56px',
+                    height: '68px',
+                    background: '#fff',
+                    border: '1px solid #E5E7EB',
+                    borderRadius: '6px',
+                    boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    marginBottom: '12px'
+                  }}>
+                    <span style={{
+                      position: 'absolute',
+                      top: '-6px',
+                      left: '6px',
+                      background: '#EF4444',
+                      color: '#fff',
+                      fontSize: '9px',
+                      fontWeight: 700,
+                      padding: '1px 4px',
+                      borderRadius: '3px'
+                    }}>PDF</span>
+                    <FileText size={28} color="#DC2626" />
+                  </div>
+                  {activeDoc.fileUrl ? (
+                    <a 
+                      href={activeDoc.fileUrl} 
+                      target="_blank" 
+                      rel="noreferrer"
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        color: '#0D9488',
+                        fontSize: '13px',
+                        fontWeight: 600,
+                        textDecoration: 'none'
+                      }}
+                    >
+                      <ExternalLink size={14} />
+                      <span>View uploaded file</span>
+                    </a>
+                  ) : (
+                    <span style={{ fontSize: '12px', color: '#94A3B8' }}>No file attached</span>
+                  )}
+                </div>
 
-            {/* Action Buttons */}
-            <div style={{ display: 'flex', gap: '12px', marginBottom: '16px' }}>
-              <button 
-                className="btn btn-primary"
-                style={{ flex: 1, background: '#0D9488', justifyContent: 'center', height: '42px', fontWeight: 600 }}
-                onClick={() => handleStatusChange(activeDoc?.id, 'Approved')}
-                disabled={isUpdating}
-              >
-                Approve
-              </button>
-              <button 
-                className="btn btn-outline"
-                style={{ flex: 1, borderColor: '#EF4444', color: '#EF4444', justifyContent: 'center', height: '42px', fontWeight: 600 }}
-                onClick={() => handleStatusChange(activeDoc?.id, 'Rejected', rejectionReason)}
-                disabled={isUpdating}
-              >
-                Reject
-              </button>
-            </div>
+                {/* Action Buttons */}
+                <div style={{ display: 'flex', gap: '12px', marginBottom: '16px' }}>
+                  <button 
+                    className="btn btn-primary"
+                    style={{ flex: 1, background: '#0D9488', justifyContent: 'center', height: '42px', fontWeight: 600 }}
+                    onClick={() => handleStatusChange(activeDoc.id, 'Approved')}
+                    disabled={isUpdating}
+                  >
+                    Approve
+                  </button>
+                  <button 
+                    className="btn btn-outline"
+                    style={{ flex: 1, borderColor: '#EF4444', color: '#EF4444', justifyContent: 'center', height: '42px', fontWeight: 600 }}
+                    onClick={() => handleStatusChange(activeDoc.id, 'Rejected', rejectionReason)}
+                    disabled={isUpdating}
+                  >
+                    Reject
+                  </button>
+                </div>
 
-            {/* Rejection reason textarea */}
-            <div style={{ marginBottom: '16px' }}>
-              <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#111827', marginBottom: '6px' }}>
-                Rejection reason
-              </label>
-              <textarea 
-                className="form-control"
-                placeholder="Reason shown to member..."
-                value={rejectionReason}
-                onChange={(e) => setRejectionReason(e.target.value)}
-                rows={2}
-                style={{ resize: 'vertical', fontSize: '13px' }}
-              />
-            </div>
+                {/* Rejection reason textarea */}
+                <div style={{ marginBottom: '16px' }}>
+                  <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#111827', marginBottom: '6px' }}>
+                    Rejection reason
+                  </label>
+                  <textarea 
+                    className="form-control"
+                    placeholder="Reason shown to member..."
+                    value={rejectionReason}
+                    onChange={(e) => setRejectionReason(e.target.value)}
+                    rows={2}
+                    style={{ resize: 'vertical', fontSize: '13px' }}
+                  />
+                </div>
 
-            <div style={{ fontSize: '12px', color: '#6B7280', textAlign: 'center' }}>
-              Submission alert • In-app + email sent to reviewers
-            </div>
+                <div style={{ fontSize: '12px', color: '#6B7280', textAlign: 'center' }}>
+                  Submission alert • In-app + email sent to reviewers
+                </div>
+              </>
+            ) : (
+              <div style={{ textAlign: 'center', padding: '36px 16px', color: '#64748B', fontSize: '13px' }}>
+                Select a submission from the list to review evidence and approve or reject.
+              </div>
+            )}
           </div>
         </div>
       )}

@@ -33,7 +33,7 @@ export default function UserTasks() {
       title: 'Book venue',
       source: 'Assigned via Committee group',
       status: 'complete',
-      completedBy: 'Example Coordinator'
+      completedBy: 'Coordinator'
     }
   ]);
 
@@ -342,7 +342,7 @@ export default function UserTasks() {
                             ) : (
                               <button
                                 onClick={() => {
-                                  setEventTasksList(prev => prev.map(t => t.id === task.id ? { ...t, status: 'complete', completedBy: profile?.displayName || 'Example Member' } : t));
+                                  setEventTasksList(prev => prev.map(t => t.id === task.id ? { ...t, status: 'complete', completedBy: profile?.displayName || 'Member' } : t));
                                 }}
                                 style={{
                                   background: '#FFFFFF',

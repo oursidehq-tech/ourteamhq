@@ -8,7 +8,9 @@ import Modal from '../components/Modal';
 
 export default function UserFeed() {
   const { selectedClubId, selectedClub } = useClub();
-  const { profile, user } = useAuth();
+  const { profile, user, joinClubWithCode } = useAuth();
+  const [joinCode, setJoinCode] = useState('');
+  const [joiningClub, setJoiningClub] = useState(false);
   const [posts, setPosts] = useState([]);
   const [matches, setMatches] = useState([]);
   const [activeCategory, setActiveCategory] = useState('All');
@@ -165,6 +167,44 @@ export default function UserFeed() {
     }
     return '';
   };
+
+  const handleQuickJoinClub = async (e) => {
+    e.preventDefault();
+    if (!joinCode.trim()) return;
+    setJoiningClub(true);
+    const club = await joinClubWithCode(joinCode.trim());
+    if (club) {
+      setJoinCode('');
+    }
+    setJoiningClub(false);
+  };
+
+  if (!selectedClubId) {
+    return (
+      <div style={{ maxWidth: '640px', margin: '48px auto', padding: '24px' }}>
+        <div className="card shadow-sm" style={{ border: '1px solid var(--border)', background: '#ffffff', borderRadius: '16px', padding: '32px', textAlign: 'center' }}>
+          <Activity size={36} style={{ color: 'var(--primary)', marginBottom: '12px' }} />
+          <h2 style={{ margin: '0 0 8px 0', fontSize: '20px', fontWeight: 800 }}>No Club Connected</h2>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '14px', marginBottom: '20px', lineHeight: 1.5 }}>
+            Your account is not currently linked to a club. Enter your club's 6-character invite code below to connect right away.
+          </p>
+          <form onSubmit={handleQuickJoinClub} style={{ display: 'flex', gap: '10px', maxWidth: '380px', margin: '0 auto' }}>
+            <input
+              className="form-control"
+              placeholder="Invite code (e.g. A3B9X2)"
+              value={joinCode}
+              onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
+              maxLength={10}
+              style={{ textTransform: 'uppercase', letterSpacing: '0.12em', fontWeight: 700, textAlign: 'center' }}
+            />
+            <button type="submit" className="btn btn-primary" disabled={joiningClub || !joinCode.trim()}>
+              {joiningClub ? 'Joining...' : 'Join Club'}
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{ maxWidth: '1000px', margin: '0 auto', padding: '24px' }}>

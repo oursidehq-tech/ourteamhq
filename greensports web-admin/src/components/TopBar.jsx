@@ -8,7 +8,7 @@ import ClubSelector from './ClubSelector';
 
 const TopBar = ({ onToggleSidebar }) => {
   const { profile, isSuperAdmin } = useAuth();
-  const { selectedClubId, selectedClub } = useClub();
+  const { selectedClubId, selectedClub, activeMembership: clubMembership } = useClub();
   const navigate = useNavigate();
   const [searchFocused, setSearchFocused] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -46,10 +46,11 @@ const TopBar = ({ onToggleSidebar }) => {
     return () => clearTimeout(delayDebounceFn);
   }, [searchTerm, selectedClubId]);
 
-  const activeMembership = profile?.clubMemberships?.find(m => m.clubId === selectedClubId);
-  const activeRole = isSuperAdmin 
-    ? 'Super Admin' 
-    : (activeMembership ? (activeMembership.roles ? activeMembership.roles.join(', ') : activeMembership.role) : 'Club Member');
+  const activeMembership = clubMembership || profile?.clubMemberships?.find(m => m.clubId === selectedClubId);
+  const membershipRole = activeMembership
+    ? ((Array.isArray(activeMembership.roles) && activeMembership.roles.length > 0 ? activeMembership.roles.join(', ') : activeMembership.role) || 'Club Member')
+    : 'Club Member';
+  const activeRole = isSuperAdmin ? 'Super Admin' : membershipRole;
 
   return (
     <header className="topbar">

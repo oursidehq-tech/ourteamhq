@@ -43,15 +43,22 @@ export default function SettingsPage() {
       // Update member sub-doc to Admin
       await updateDoc(doc(db, 'clubs', selectedClub.id, 'members', targetDoc.id), {
         role: 'Admin',
+        roles: ['Admin'],
         updatedAt: serverTimestamp(),
       });
 
-      // Sync to user's clubMemberships
-      const memberships = targetData.clubMemberships || [];
-      const updated = memberships.map(m =>
-        m.clubId === selectedClub.id ? { ...m, role: 'Admin' } : m
-      );
-      await updateDoc(doc(db, 'users', targetDoc.id), { clubMemberships: updated, updatedAt: serverTimestamp() });
+      // Sync to user's clubMemberships (upsert if missing)
+      const memberships = Array.isArray(targetData.clubMemberships) ? [...targetData.clubMemberships] : [];
+      const exists = memberships.some(m => m.clubId === selectedClub.id);
+      const updated = exists
+        ? memberships.map(m =>
+            m.clubId === selectedClub.id ? { ...m, clubName: m.clubName || selectedClub.name, role: 'Admin', roles: ['Admin'] } : m
+          )
+        : [
+            ...memberships,
+            { clubId: selectedClub.id, clubName: selectedClub.name, role: 'Admin', roles: ['Admin'], joinedAt: new Date().toISOString() },
+          ];
+      await updateDoc(doc(db, 'users', targetDoc.id), { uid: targetDoc.id, clubMemberships: updated, updatedAt: serverTimestamp() });
 
       setPromoteStatus(`${targetData.displayName || promoteEmail} is now an Admin of ${selectedClub.name}!`);
       setPromoteEmail('');

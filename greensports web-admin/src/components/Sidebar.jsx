@@ -108,14 +108,15 @@ const userSections = [
 
 export default function Sidebar({ isCollapsed, onToggle, mobileOpen, onCloseMobile }) {
   const { logout, isOwnerOf, hasRole, profile, isSuperAdmin, portalMode, setPortalMode, adminClubIds } = useAuth();
-  const { selectedClubId } = useClub();
+  const { selectedClubId, activeMembership: clubMembership } = useClub();
   const navigate = useNavigate();
   const isOwner = selectedClubId ? isOwnerOf(selectedClubId) : false;
 
-  const activeMembership = profile?.clubMemberships?.find(m => m.clubId === selectedClubId);
-  const activeRole = isSuperAdmin 
-    ? 'Super Admin' 
-    : (activeMembership ? (activeMembership.roles ? activeMembership.roles.join(', ') : activeMembership.role) : 'Club Member');
+  const activeMembership = clubMembership || profile?.clubMemberships?.find(m => m.clubId === selectedClubId);
+  const membershipRole = activeMembership
+    ? ((Array.isArray(activeMembership.roles) && activeMembership.roles.length > 0 ? activeMembership.roles.join(', ') : activeMembership.role) || 'Club Member')
+    : 'Club Member';
+  const activeRole = isSuperAdmin ? 'Super Admin' : membershipRole;
 
   const handleLogout = () => {
     logout();
@@ -127,12 +128,13 @@ export default function Sidebar({ isCollapsed, onToggle, mobileOpen, onCloseMobi
   return (
     <aside className={`sidebar ${isCollapsed ? 'collapsed' : ''} ${mobileOpen ? 'mobile-open' : ''}`}>
       <button 
+        type="button"
         className="sidebar-toggle" 
         onClick={onToggle}
-        title={isCollapsed ? "Expand sidebar (open)" : "Collapse sidebar (close)"}
+        title={isCollapsed ? "Show full sidebar" : "Hide sidebar"}
         aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
       >
-        {isCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
+        {isCollapsed ? <ChevronRight size={15} strokeWidth={2.5} /> : <ChevronLeft size={15} strokeWidth={2.5} />}
       </button>
 
       {mobileOpen && (
@@ -152,29 +154,15 @@ export default function Sidebar({ isCollapsed, onToggle, mobileOpen, onCloseMobi
 
       {/* Mode Toggle Button for Admins & Super Admins */}
       {(adminClubIds.length > 0 || isSuperAdmin) && (
-        <div style={{ padding: isCollapsed ? '0 8px 12px 8px' : '0 16px 12px 16px' }}>
+        <div className="sidebar-mode-wrap">
           <button
+            type="button"
+            className="sidebar-mode-btn"
+            title={isCollapsed ? (portalMode === 'admin' ? 'Switch to User Space' : 'Switch to Admin Panel') : ''}
             onClick={() => {
               const target = portalMode === 'admin' ? 'user' : 'admin';
               setPortalMode(target);
               navigate('/');
-            }}
-            style={{
-              width: '100%',
-              padding: '10px',
-              borderRadius: '10px',
-              border: '1px solid rgba(16, 185, 129, 0.3)',
-              background: 'rgba(16, 185, 129, 0.08)',
-              color: 'var(--primary)',
-              fontWeight: 600,
-              fontSize: '12px',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '8px',
-              transition: 'all 0.2s',
-              boxSizing: 'border-box'
             }}
           >
             <Crown size={14} style={{ flexShrink: 0 }} />
@@ -222,31 +210,15 @@ export default function Sidebar({ isCollapsed, onToggle, mobileOpen, onCloseMobi
           );
         })}
       </nav>
-      <div style={{ padding: '8px 12px' }}>
+      <div className="sidebar-promo-wrap">
         <a 
           href="/promo.html" 
           target="_blank" 
           rel="noopener noreferrer" 
-          className="promo-sidebar-link"
+          className="sidebar-promo-link"
           title={isCollapsed ? "Watch Promo Video" : ""}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '10px',
-            padding: '10px 14px',
-            background: 'linear-gradient(135deg, rgba(46, 213, 115, 0.16) 0%, rgba(0, 210, 211, 0.16) 100%)',
-            border: '1px solid rgba(46, 213, 115, 0.45)',
-            borderRadius: '10px',
-            color: '#2ed573',
-            textDecoration: 'none',
-            fontSize: '0.84rem',
-            fontWeight: 700,
-            transition: 'all 0.2s ease',
-            justifyContent: isCollapsed ? 'center' : 'flex-start',
-            boxShadow: '0 0 12px rgba(46, 213, 115, 0.15)'
-          }}
         >
-          <Play size={16} fill="#2ed573" />
+          <Play size={16} fill="#2ed573" style={{ flexShrink: 0 }} />
           {!isCollapsed && <span>Watch Promo Reel 🎬</span>}
         </a>
       </div>

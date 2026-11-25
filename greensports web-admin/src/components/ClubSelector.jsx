@@ -1,10 +1,12 @@
 import { useState, useRef, useEffect } from 'react';
 import { useClub } from '../context/ClubContext';
+import { useAuth } from '../context/AuthContext';
 import { Building2, ChevronDown, Check, Shield, Plus, ExternalLink } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 export default function ClubSelector() {
   const { clubs, selectedClubId, setSelectedClubId } = useClub();
+  const { portalMode } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef(null);
   const navigate = useNavigate();
@@ -33,10 +35,16 @@ export default function ClubSelector() {
 
   if (!clubs || clubs.length === 0) {
     return (
-      <div className="club-selector-custom empty">
+      <button
+        type="button"
+        className="club-selector-custom empty"
+        onClick={() => navigate(portalMode === 'admin' ? '/clubs' : '/user-profile')}
+        title={portalMode === 'admin' ? 'Create or manage clubs' : 'Connect to a club with an invite code'}
+        style={{ cursor: 'pointer', border: '1px dashed var(--border)', background: 'transparent' }}
+      >
         <Building2 size={16} className="text-muted" />
-        <span className="text-muted text-sm">No Clubs</span>
-      </div>
+        <span className="text-muted text-sm">No Clubs · Join</span>
+      </button>
     );
   }
 

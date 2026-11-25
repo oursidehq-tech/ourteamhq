@@ -50,7 +50,7 @@ export default function UserCalendar() {
       title: 'Book venue',
       source: 'Assigned via Committee group',
       status: 'complete',
-      completedBy: 'Example Coordinator'
+      completedBy: 'Coordinator'
     }
   ]);
 
@@ -449,9 +449,6 @@ export default function UserCalendar() {
             <span style={{ fontSize: '11px', fontWeight: 800, background: '#1E3A8A', color: '#FFFFFF', padding: '3px 10px', borderRadius: '999px', letterSpacing: '0.05em' }}>
               USER SPACE
             </span>
-            <span style={{ fontSize: '11px', fontWeight: 600, background: '#0D9488', color: '#FFFFFF', padding: '3px 10px', borderRadius: '999px' }}>
-              Concept • Example data
-            </span>
           </div>
           <p style={{ margin: 0, fontSize: '13px', color: '#64748B' }}>
             Your team fixtures, volunteer duties and club events
@@ -605,7 +602,7 @@ export default function UserCalendar() {
                     ) : (
                       <button
                         onClick={() => {
-                          setEventTasksList(prev => prev.map(t => t.id === task.id ? { ...t, status: 'complete', completedBy: profile?.displayName || 'Example Member' } : t));
+                          setEventTasksList(prev => prev.map(t => t.id === task.id ? { ...t, status: 'complete', completedBy: profile?.displayName || 'Member' } : t));
                         }}
                         style={{
                           background: '#FFFFFF',
@@ -1181,8 +1178,8 @@ export default function UserCalendar() {
           </h3>
           <div style={{ border: '1px solid #E2E8F0', borderRadius: '10px', overflow: 'hidden', marginBottom: '18px' }}>
             {[
-              { task: 'Book venue', owner: 'Committee', status: 'Complete', by: 'Example Coordinator' },
-              { task: 'Set up online registration', owner: 'Example Admin', status: 'In progress' },
+              { task: 'Book venue', owner: 'Committee', status: 'Complete', by: 'Coordinator' },
+              { task: 'Set up online registration', owner: 'Admin', status: 'In progress' },
               { task: 'Organise volunteers', owner: 'U13 Managers group', status: 'In progress' },
               { task: 'Prepare player packs', owner: 'U17 Nev Blair team', status: eventTasksList.find(t => t.id === 'evt-task-1')?.status === 'complete' ? 'Complete' : 'Not started' },
               { task: 'Confirm first aid cover', owner: 'Club First Aid Officer', status: 'Not started' },

@@ -73,6 +73,7 @@ export default function ClubsPage() {
         subscriptionStatus: 'active',
         contact: { email: adminEmail, phone: '' },
         keyPeople: [{ name: adminName, role: 'Owner', uid: adminUid }],
+        ownerId: adminUid,
         createdBy: adminUid,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
@@ -81,9 +82,11 @@ export default function ClubsPage() {
       // Create owner as member of the club
       await setDoc(doc(db, 'clubs', ref.id, 'members', adminUid), {
         uid: adminUid,
+        userId: adminUid,
         displayName: adminName,
         email: adminEmail,
         role: 'Owner',
+        roles: ['Owner'],
         teamIds: [],
         joinedAt: serverTimestamp(),
       });
@@ -94,8 +97,8 @@ export default function ClubsPage() {
       if (userSnap.exists()) {
         const memberships = userSnap.data().clubMemberships || [];
         if (!memberships.find(m => m.clubId === ref.id)) {
-          memberships.push({ clubId: ref.id, clubName: newForm.name.trim(), role: 'Owner', teamIds: [] });
-          await updateDoc(userRef, { clubMemberships: memberships, updatedAt: serverTimestamp() });
+          memberships.push({ clubId: ref.id, clubName: newForm.name.trim(), role: 'Owner', roles: ['Owner'], teamIds: [] });
+          await updateDoc(userRef, { uid: adminUid, clubMemberships: memberships, updatedAt: serverTimestamp() });
         }
       }
 

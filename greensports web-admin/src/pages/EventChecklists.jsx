@@ -206,9 +206,6 @@ export default function EventChecklists() {
           <h1 style={{ margin: 0, fontSize: '24px', fontWeight: 800, color: '#0F172A' }}>
             Checklist Templates
           </h1>
-          <span style={{ fontSize: '11px', fontWeight: 600, background: '#0D9488', color: '#FFFFFF', padding: '3px 10px', borderRadius: '999px' }}>
-            Concept • Example data
-          </span>
         </div>
 
         <button

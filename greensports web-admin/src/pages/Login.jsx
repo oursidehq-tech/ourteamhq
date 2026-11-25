@@ -155,7 +155,7 @@ export default function Login() {
   };
 
   useEffect(() => {
-    if (profile) {
+    if (profile && !(activeTab === 'signup' && loading)) {
       if (portalType === 'admin') {
         if (!isPinVerified) {
           setStep('pin');
@@ -172,7 +172,7 @@ export default function Login() {
         navigate('/dashboard');
       }
     }
-  }, [profile, isPinVerified, navigate, portalType]);
+  }, [profile, isPinVerified, navigate, portalType, activeTab, loading]);
 
   return (
     <div className="login-page-premium" style={{

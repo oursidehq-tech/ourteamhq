@@ -224,56 +224,6 @@ export default function TeamGroupDetail({ item, itemType, selectedClubId, onClos
       });
     });
 
-    if (list.length === 0) {
-      return [
-        {
-          id: 'mock-act-1',
-          activity: `${item.name || 'U17 Nev Blair'} vs Norths Juniors`,
-          type: 'Match',
-          dateTime: 'Sat 6 Feb 2027, arrive 8:15, start 9:00 am',
-          venue: 'Main Oval',
-          visibility: 'Published',
-          status: 'scheduled',
-          responses: '12 available • 3 awaiting • 1 unavailable',
-          isEvent: true
-        },
-        {
-          id: 'mock-act-2',
-          activity: 'Team training',
-          type: 'Training',
-          dateTime: 'Tue 9 Feb 2027, 5:30 pm',
-          venue: 'Main Oval',
-          visibility: 'Published',
-          status: 'scheduled',
-          responses: '—',
-          isSession: true
-        },
-        {
-          id: 'mock-act-3',
-          activity: `${item.name || 'U17 Nev Blair'} vs Redcliffe Dolphins`,
-          type: 'Match',
-          dateTime: 'Sat 13 Feb 2027, 9:00 am',
-          venue: 'WJ Scott Park',
-          visibility: 'Published',
-          status: 'scheduled',
-          responses: 'Not yet open',
-          isEvent: true
-        },
-        {
-          id: 'mock-act-4',
-          activity: 'Team presentation',
-          type: 'Event',
-          dateTime: 'Needs date',
-          needsDateBadge: true,
-          venue: '—',
-          visibility: 'Draft',
-          status: 'draft',
-          responses: '—',
-          isEvent: true
-        }
-      ];
-    }
-
     return list.sort((a, b) => (a.dateStr || '9999').localeCompare(b.dateStr || '9999'));
   }, [tabData.trainingSessions, tabData.events, item.name]);
 
@@ -282,89 +232,32 @@ export default function TeamGroupDetail({ item, itemType, selectedClubId, onClos
     const tasks = tabData.tasks || [];
     const open = tasks.filter(t => t.status === 'unfilled' || !t.assignedTo).length;
     const assigned = tasks.filter(t => t.assignedTo && t.status !== 'completed').length;
-    const eventTasks = tasks.filter(t => t.source || t.eventId).length;
+    const eventTasks = tasks.filter(t => t.source || t.eventId || t.type === 'event_task' || t.checklistId).length;
     return {
-      open: open > 0 ? open : 2,
-      assigned: assigned > 0 ? assigned : 1,
-      eventTasks: eventTasks > 0 ? eventTasks : 1
+      open,
+      assigned,
+      eventTasks
     };
   }, [tabData.tasks]);
 
-  // Tasks list with approved mockup fallback (Image 10)
+  // Tasks list
   const displayTasks = useMemo(() => {
-    if ((tabData.tasks || []).length > 0) return tabData.tasks;
-    return [
-      {
-        id: 't-1',
-        title: 'Set up field',
-        time: '7:30–8:00 am',
-        location: 'Main Oval',
-        assignedTo: null,
-        assignedToName: 'Unassigned',
-        status: 'unfilled'
-      },
-      {
-        id: 't-2',
-        title: 'Canteen helper',
-        time: '10:30–11:00 am',
-        location: 'Clubhouse',
-        assignedTo: 'p-1',
-        assignedToName: 'Example Parent',
-        status: 'assigned'
-      },
-      {
-        id: 't-3',
-        title: 'Pack up field',
-        time: '10:00–10:30 am',
-        location: 'Main Oval',
-        assignedTo: null,
-        assignedToName: 'Unassigned',
-        status: 'unfilled'
-      }
-    ];
+    return tabData.tasks || [];
   }, [tabData.tasks]);
 
-  // Posts list with approved mockup fallback (Image 11)
+  // Posts list
   const displayAdminPosts = useMemo(() => {
-    const raw = (tabData.posts || []).filter(p => updatesSubTab === 'published' ? p.status !== 'draft' : p.status === 'draft');
-    if (raw.length > 0) return raw;
-    if (updatesSubTab === 'published') {
-      return [
-        {
-          id: 'admin-post-1',
-          title: 'Training time changed',
-          content: 'Training is moved to 5:30 pm Tuesday on Main Oval.',
-          body: 'Training is moved to 5:30 pm Tuesday on Main Oval.',
-          authorName: 'Example Coach',
-          pinned: true,
-          status: 'published',
-          createdAt: { toDate: () => new Date('2027-02-05') },
-          audience: `${item.name || 'U17 Nev Blair'} members and authorised guardians`
-        },
-        {
-          id: 'admin-post-2',
-          title: 'Matchday reminder',
-          content: 'Please arrive 8:15 am for 9:00 am kick-off.',
-          body: 'Please arrive 8:15 am for 9:00 am kick-off.',
-          authorName: 'Example Manager',
-          pinned: false,
-          status: 'published',
-          createdAt: { toDate: () => new Date('2027-02-04') },
-          audience: `${item.name || 'U17 Nev Blair'} members and authorised guardians`
-        }
-      ];
-    }
-    return [];
-  }, [tabData.posts, updatesSubTab, item.name]);
+    return (tabData.posts || []).filter(p => updatesSubTab === 'published' ? p.status !== 'draft' : p.status === 'draft');
+  }, [tabData.posts, updatesSubTab]);
 
-  // Staff list for Admin Overview matching concept
+  // Staff list for Admin Overview
   const adminStaffList = useMemo(() => {
     return [
-      { role: 'Coach', name: item.coachName || 'Example Coach', status: 'green' },
-      { role: 'Assistant Coach', name: item.assistantCoachName || 'Example Assistant', status: 'green' },
-      { role: 'Trainer', name: item.trainerName || 'Example Trainer', status: 'amber' },
-      { role: 'First Aid Officer', name: item.firstAidName || null, status: 'unassigned' },
-      { role: 'Team Manager', name: item.managerName || 'Example Manager', status: 'green' },
+      { role: 'Coach', name: item.coachName || null, status: item.coachName ? 'green' : 'unassigned' },
+      { role: 'Assistant Coach', name: item.assistantCoachName || null, status: item.assistantCoachName ? 'green' : 'unassigned' },
+      { role: 'Trainer', name: item.trainerName || null, status: item.trainerName ? 'green' : 'unassigned' },
+      { role: 'First Aid Officer', name: item.firstAidName || null, status: item.firstAidName ? 'green' : 'unassigned' },
+      { role: 'Team Manager', name: item.managerName || null, status: item.managerName ? 'green' : 'unassigned' },
     ];
   }, [item]);
 
@@ -582,9 +475,6 @@ export default function TeamGroupDetail({ item, itemType, selectedClubId, onClos
               </h1>
               <span style={{ fontSize: '11px', fontWeight: 800, background: '#1E3A8A', color: '#FFFFFF', padding: '3px 10px', borderRadius: '999px', letterSpacing: '0.05em' }}>
                 ADMIN SPACE
-              </span>
-              <span style={{ fontSize: '11px', fontWeight: 600, background: '#0D9488', color: '#FFFFFF', padding: '3px 10px', borderRadius: '999px' }}>
-                Concept • Example data
               </span>
             </div>
             <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: '#64748B' }}>
@@ -856,18 +746,20 @@ export default function TeamGroupDetail({ item, itemType, selectedClubId, onClos
                 </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '14px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px' }}>
-                    <span style={{ color: '#334155' }}>Canteen helper • Sat 6 Feb 10:30 am • Unfilled</span>
-                    <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#F59E0B' }} />
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px' }}>
-                    <span style={{ color: '#334155' }}>Canteen helper • Sat 6 Feb 11:00 am • Unfilled</span>
-                    <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#F59E0B' }} />
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px' }}>
-                    <span style={{ color: '#334155' }}>Field setup • Sat 6 Feb 7:45 am • Example Parent • Assigned</span>
-                    <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#10B981' }} />
-                  </div>
+                  {displayTasks.length > 0 ? (
+                    displayTasks.slice(0, 3).map(task => (
+                      <div key={task.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px' }}>
+                        <span style={{ color: '#334155' }}>
+                          {task.title || task.name} {task.time ? `• ${task.time}` : ''} {task.assignedToName ? `• ${task.assignedToName}` : ''} • {task.status === 'assigned' ? 'Assigned' : 'Unfilled'}
+                        </span>
+                        <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', backgroundColor: task.status === 'assigned' ? '#10B981' : '#F59E0B' }} />
+                      </div>
+                    ))
+                  ) : (
+                    <div style={{ fontSize: '12px', color: '#64748B', textAlign: 'center', padding: '12px 0' }}>
+                      No duties scheduled.
+                    </div>
+                  )}
                 </div>
 
                 <div style={{ fontSize: '11px', color: '#94A3B8', borderTop: '1px solid #F1F5F9', paddingTop: '10px' }}>
@@ -937,20 +829,20 @@ export default function TeamGroupDetail({ item, itemType, selectedClubId, onClos
           {membersSubTab === 'staff' ? (
             /* 2-Column layout matching Image 8 */
             <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: '20px', alignItems: 'start' }}>
-              {/* Left Column: Team staff appointments • 4 of 5 filled */}
+              {/* Left Column: Team staff appointments */}
               <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '16px', padding: '22px 24px', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
                 <h3 style={{ margin: '0 0 16px 0', fontSize: '15px', fontWeight: 800, color: '#0F172A' }}>
-                  Team staff appointments • 4 of 5 filled
+                  Team staff appointments • {[item.coachName, item.assistantCoachName, item.trainerName, item.firstAidName, item.managerName].filter(Boolean).length} of 5 filled
                 </h3>
 
                 <table style={{ width: '100%', borderCollapse: 'collapse', margin: '0 0 16px 0' }}>
                   <tbody>
                     {[
-                      { role: 'Coach', name: item.coachName || 'Example Coach', status: 'Compliant', color: '#10B981', isFilled: true },
-                      { role: 'Assistant Coach', name: item.assistantCoachName || 'Example Assistant', status: 'Compliant', color: '#10B981', isFilled: true },
-                      { role: 'Trainer', name: item.trainerName || 'Example Trainer', status: 'Action needed', color: '#D97706', isFilled: true },
-                      { role: 'First Aid Officer', name: item.firstAidName || null, status: 'Not assigned', color: '#94A3B8', isFilled: !!item.firstAidName },
-                      { role: 'Team Manager', name: item.managerName || 'Example Manager', status: 'Compliant', color: '#10B981', isFilled: true },
+                      { role: 'Coach', name: item.coachName || null, status: item.coachName ? 'Compliant' : 'Not assigned', color: item.coachName ? '#10B981' : '#94A3B8', isFilled: !!item.coachName },
+                      { role: 'Assistant Coach', name: item.assistantCoachName || null, status: item.assistantCoachName ? 'Compliant' : 'Not assigned', color: item.assistantCoachName ? '#10B981' : '#94A3B8', isFilled: !!item.assistantCoachName },
+                      { role: 'Trainer', name: item.trainerName || null, status: item.trainerName ? 'Compliant' : 'Not assigned', color: item.trainerName ? '#10B981' : '#94A3B8', isFilled: !!item.trainerName },
+                      { role: 'First Aid Officer', name: item.firstAidName || null, status: item.firstAidName ? 'Compliant' : 'Not assigned', color: item.firstAidName ? '#10B981' : '#94A3B8', isFilled: !!item.firstAidName },
+                      { role: 'Team Manager', name: item.managerName || null, status: item.managerName ? 'Compliant' : 'Not assigned', color: item.managerName ? '#10B981' : '#94A3B8', isFilled: !!item.managerName },
                     ].map((st, idx) => (
                       <tr key={st.role} style={{ borderBottom: idx < 4 ? '1px solid #F1F5F9' : 'none' }}>
                         <td style={{ padding: '12px 0', fontWeight: 700, fontSize: '13px', color: '#0F172A', width: '30%' }}>
@@ -1003,17 +895,27 @@ export default function TeamGroupDetail({ item, itemType, selectedClubId, onClos
                   Guardian links
                 </h3>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: '#0F172A', marginBottom: '22px', flexWrap: 'wrap' }}>
-                  <span style={{ fontWeight: 600 }}>Example Player</span>
-                  <span style={{ color: '#94A3B8' }}>→</span>
-                  <span>Example Parent</span>
-                  <span style={{ color: '#94A3B8' }}>•</span>
-                  <span style={{ color: '#64748B' }}>Guardian</span>
-                  <span style={{ color: '#94A3B8' }}>•</span>
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: '#0D9488', fontWeight: 600 }}>
-                    Verified <CheckCircle2 size={14} color="#0D9488" />
-                  </span>
-                </div>
+                {members.some(m => m.guardianName) ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '22px' }}>
+                    {members.filter(m => m.guardianName).map(m => (
+                      <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: '#0F172A', flexWrap: 'wrap' }}>
+                        <span style={{ fontWeight: 600 }}>{m.displayName || m.name}</span>
+                        <span style={{ color: '#94A3B8' }}>→</span>
+                        <span>{m.guardianName}</span>
+                        <span style={{ color: '#94A3B8' }}>•</span>
+                        <span style={{ color: '#64748B' }}>Guardian</span>
+                        <span style={{ color: '#94A3B8' }}>•</span>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: '#0D9488', fontWeight: 600 }}>
+                          Verified <CheckCircle2 size={14} color="#0D9488" />
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ fontSize: '13px', color: '#64748B', marginBottom: '22px' }}>
+                    No linked guardians registered for this squad yet.
+                  </div>
+                )}
 
                 <div style={{ display: 'flex', gap: '10px' }}>
                   <button
@@ -1069,45 +971,47 @@ export default function TeamGroupDetail({ item, itemType, selectedClubId, onClos
                   </tr>
                 </thead>
                 <tbody>
-                  {(members.length > 0 ? members : Array.from({ length: 16 }).map((_, i) => ({
-                    id: `p-${i + 1}`,
-                    displayName: i === 0 ? 'Example Player' : `Example Player ${String(i + 1).padStart(2, '0')}`,
-                    position: i % 4 === 0 ? 'Forward' : i % 3 === 0 ? 'Midfielder' : 'Defender',
-                    jerseyNumber: i + 1,
-                    guardianName: 'Example Parent'
-                  }))).map(m => (
-                    <tr key={m.id} style={{ borderBottom: '1px solid #F1F5F9' }}>
-                      <td style={{ padding: '12px 18px', fontWeight: 700, fontSize: '13px', color: '#0F172A' }}>
-                        {m.displayName || m.name}
-                      </td>
-                      <td style={{ padding: '12px 14px', fontSize: '12px', color: '#64748B' }}>
-                        {m.position || '—'}
-                      </td>
-                      <td style={{ padding: '12px 14px', fontSize: '12px', color: '#64748B' }}>
-                        {m.jerseyNumber || m.number || '—'}
-                      </td>
-                      <td style={{ padding: '12px 14px', fontSize: '12px', color: '#0D9488' }}>
-                        {m.guardianName || 'Example Parent (Verified ✓)'}
-                      </td>
-                      <td style={{ padding: '12px 18px', textAlign: 'right' }}>
-                        <button
-                          onClick={async () => {
-                            if (!window.confirm(`Remove ${m.displayName || m.name} from this team?`)) return;
-                            if (m.id && !m.id.startsWith('p-')) {
-                              await updateDoc(doc(db, 'clubs', selectedClubId, 'members', m.id), {
-                                teamIds: arrayRemove(item.id)
-                              });
-                              fetchMembers();
-                            }
-                          }}
-                          className="btn-icon danger"
-                          title="Remove from team"
-                        >
-                          <Trash2 size={14} />
-                        </button>
+                  {members.length > 0 ? (
+                    members.map(m => (
+                      <tr key={m.id} style={{ borderBottom: '1px solid #F1F5F9' }}>
+                        <td style={{ padding: '12px 18px', fontWeight: 700, fontSize: '13px', color: '#0F172A' }}>
+                          {m.displayName || m.name}
+                        </td>
+                        <td style={{ padding: '12px 14px', fontSize: '12px', color: '#64748B' }}>
+                          {m.position || '—'}
+                        </td>
+                        <td style={{ padding: '12px 14px', fontSize: '12px', color: '#64748B' }}>
+                          {m.jerseyNumber || m.number || '—'}
+                        </td>
+                        <td style={{ padding: '12px 14px', fontSize: '12px', color: m.guardianName ? '#0D9488' : '#94A3B8' }}>
+                          {m.guardianName ? `${m.guardianName} (Verified ✓)` : 'No linked guardian'}
+                        </td>
+                        <td style={{ padding: '12px 18px', textAlign: 'right' }}>
+                          <button
+                            onClick={async () => {
+                              if (!window.confirm(`Remove ${m.displayName || m.name} from this team?`)) return;
+                              if (m.id) {
+                                await updateDoc(doc(db, 'clubs', selectedClubId, 'members', m.id), {
+                                  teamIds: arrayRemove(item.id)
+                                });
+                                fetchMembers();
+                              }
+                            }}
+                            className="btn-icon danger"
+                            title="Remove from team"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={5} style={{ padding: '24px', textAlign: 'center', color: '#64748B', fontSize: '13px' }}>
+                        No members assigned to this squad yet.
                       </td>
                     </tr>
-                  ))}
+                  )}
                 </tbody>
               </table>
             </div>
@@ -1121,13 +1025,21 @@ export default function TeamGroupDetail({ item, itemType, selectedClubId, onClos
                 </button>
               </div>
               <div style={{ padding: '20px 24px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: '#0F172A', padding: '12px 0', borderBottom: '1px solid #F1F5F9' }}>
-                  <span style={{ fontWeight: 700 }}>Example Parent</span>
-                  <span style={{ color: '#94A3B8' }}>•</span>
-                  <span style={{ color: '#64748B' }}>Linked to Example Player</span>
-                  <span style={{ color: '#94A3B8' }}>•</span>
-                  <span style={{ color: '#0D9488', fontWeight: 600 }}>Verified ✓</span>
-                </div>
+                {members.some(m => m.guardianName) ? (
+                  members.filter(m => m.guardianName).map(m => (
+                    <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: '#0F172A', padding: '12px 0', borderBottom: '1px solid #F1F5F9' }}>
+                      <span style={{ fontWeight: 700 }}>{m.guardianName}</span>
+                      <span style={{ color: '#94A3B8' }}>•</span>
+                      <span style={{ color: '#64748B' }}>Linked to {m.displayName || m.name}</span>
+                      <span style={{ color: '#94A3B8' }}>•</span>
+                      <span style={{ color: '#0D9488', fontWeight: 600 }}>Verified ✓</span>
+                    </div>
+                  ))
+                ) : (
+                  <div style={{ color: '#64748B', fontSize: '13px', textAlign: 'center', padding: '16px' }}>
+                    No parents or guardians registered for this squad yet.
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -1333,48 +1245,56 @@ export default function TeamGroupDetail({ item, itemType, selectedClubId, onClos
                 </tr>
               </thead>
               <tbody>
-                {displayTasks.map(d => {
-                  const isAssigned = !!d.assignedTo;
-                  return (
-                    <tr key={d.id} style={{ borderBottom: '1px solid #F1F5F9' }}>
-                      <td style={{ padding: '12px 18px', fontWeight: 700, fontSize: '13px', color: '#0F172A' }}>
-                        {d.title || d.name}
-                      </td>
-                      <td style={{ padding: '12px 14px', fontSize: '12px', color: '#334155' }}>
-                        {d.time || d.timeSlot || '7:30–8:00 am'}
-                      </td>
-                      <td style={{ padding: '12px 14px', fontSize: '12px', color: '#64748B' }}>
-                        {d.location || 'Main Oval'}
-                      </td>
-                      <td style={{ padding: '12px 14px', fontSize: '12px', color: '#0F172A' }}>
-                        {d.assignedToName || d.assignedName || (isAssigned ? 'Example Parent' : 'Unassigned')}
-                      </td>
-                      <td style={{ padding: '12px 14px' }}>
-                        {isAssigned ? (
-                          <span style={{ fontSize: '11px', fontWeight: 700, color: '#0D9488', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                            <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#0D9488' }} /> Assigned
-                          </span>
-                        ) : (
-                          <span style={{ fontSize: '11px', fontWeight: 700, color: '#F59E0B', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                            <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#F59E0B' }} /> Unfilled
-                          </span>
-                        )}
-                      </td>
-                      <td style={{ padding: '12px 18px', textAlign: 'right' }}>
-                        <button
-                          onClick={() => {
-                            setEntityForm({ ...d });
-                            setActiveItemModal({ mode: 'edit', tab: 'tasks', data: d });
-                          }}
-                          className="btn btn-outline"
-                          style={{ padding: '4px 10px', fontSize: '11px' }}
-                        >
-                          {isAssigned ? 'Reassign' : 'Assign'}
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
+                {displayTasks.length > 0 ? (
+                  displayTasks.map(d => {
+                    const isAssigned = !!d.assignedTo;
+                    return (
+                      <tr key={d.id} style={{ borderBottom: '1px solid #F1F5F9' }}>
+                        <td style={{ padding: '12px 18px', fontWeight: 700, fontSize: '13px', color: '#0F172A' }}>
+                          {d.title || d.name}
+                        </td>
+                        <td style={{ padding: '12px 14px', fontSize: '12px', color: '#334155' }}>
+                          {d.time || d.timeSlot || '—'}
+                        </td>
+                        <td style={{ padding: '12px 14px', fontSize: '12px', color: '#64748B' }}>
+                          {d.location || '—'}
+                        </td>
+                        <td style={{ padding: '12px 14px', fontSize: '12px', color: '#0F172A' }}>
+                          {d.assignedToName || d.assignedName || (isAssigned ? (d.assignedMemberName || 'Assigned member') : 'Unassigned')}
+                        </td>
+                        <td style={{ padding: '12px 14px' }}>
+                          {isAssigned ? (
+                            <span style={{ fontSize: '11px', fontWeight: 700, color: '#0D9488', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                              <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#0D9488' }} /> Assigned
+                            </span>
+                          ) : (
+                            <span style={{ fontSize: '11px', fontWeight: 700, color: '#F59E0B', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                              <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#F59E0B' }} /> Unfilled
+                            </span>
+                          )}
+                        </td>
+                        <td style={{ padding: '12px 18px', textAlign: 'right' }}>
+                          <button
+                            onClick={() => {
+                              setEntityForm({ ...d });
+                              setActiveItemModal({ mode: 'edit', tab: 'tasks', data: d });
+                            }}
+                            className="btn btn-outline"
+                            style={{ padding: '4px 10px', fontSize: '11px' }}
+                          >
+                            {isAssigned ? 'Reassign' : 'Assign'}
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })
+                ) : (
+                  <tr>
+                    <td colSpan={6} style={{ padding: '24px', textAlign: 'center', color: '#64748B', fontSize: '13px' }}>
+                      No duties or tasks scheduled for this team yet.
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
@@ -1382,22 +1302,32 @@ export default function TeamGroupDetail({ item, itemType, selectedClubId, onClos
           {/* Event Tasks Card */}
           <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '16px', padding: '20px' }}>
             <h3 style={{ margin: '0 0 12px 0', fontSize: '15px', fontWeight: 800 }}>Event tasks</h3>
-            <div style={{ border: '1px solid #E2E8F0', borderRadius: '12px', padding: '14px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#FAFAFA' }}>
-              <div>
-                <div style={{ fontWeight: 700, fontSize: '13px', color: '#0F172A' }}>Bring equipment bag</div>
-                <div style={{ fontSize: '11px', color: '#64748B', marginTop: '2px' }}>
-                  Source: {item.name} vs Norths Juniors • Example Parent via {item.name}
-                </div>
+            {displayTasks.filter(t => t.type === 'event_task' || t.eventId || t.source || t.checklistId).length > 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {displayTasks.filter(t => t.type === 'event_task' || t.eventId || t.source || t.checklistId).map(t => (
+                  <div key={t.id} style={{ border: '1px solid #E2E8F0', borderRadius: '12px', padding: '14px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#FAFAFA' }}>
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: '13px', color: '#0F172A' }}>{t.title || t.name}</div>
+                      <div style={{ fontSize: '11px', color: '#64748B', marginTop: '2px' }}>
+                        {t.source ? `Source: ${t.source}` : 'Event task'} {t.assignedToName ? `• ${t.assignedToName}` : ''}
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                      <span style={{ fontSize: '12px', color: '#64748B', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <span style={{ width: 6, height: 6, borderRadius: '50%', background: t.status === 'completed' ? '#10B981' : '#94A3B8' }} /> {t.status === 'completed' ? 'Completed' : 'Not started'}
+                      </span>
+                      <button className="btn btn-outline" style={{ fontSize: '11px', padding: '4px 10px' }} onClick={() => setActiveTab('matches')}>
+                        View event
+                      </button>
+                    </div>
+                  </div>
+                ))}
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                <span style={{ fontSize: '12px', color: '#64748B', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#94A3B8' }} /> Not started
-                </span>
-                <button className="btn btn-outline" style={{ fontSize: '11px', padding: '4px 10px' }} onClick={() => setActiveTab('matches')}>
-                  View event
-                </button>
+            ) : (
+              <div style={{ fontSize: '13px', color: '#64748B', textAlign: 'center', padding: '16px' }}>
+                No event tasks created for this team yet.
               </div>
-            </div>
+            )}
             <div style={{ fontSize: '11px', color: '#94A3B8', marginTop: '8px' }}>
               Edit event checklist items on their event.
             </div>

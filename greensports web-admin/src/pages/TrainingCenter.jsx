@@ -4,7 +4,7 @@ import {
   Trash2, Globe, Edit2, Play, ExternalLink, Clock, Eye, Download,
   CheckCircle, ClipboardList, GripVertical, X, ChevronDown, ChevronUp,
   Copy, CalendarDays, Users, Save, Layers, ArrowLeft, BookOpen,
-  AlertTriangle, Tag, Timer, StickyNote, PlusCircle, Zap, LayoutList,
+  AlertTriangle, AlertCircle, Tag, Timer, StickyNote, PlusCircle, Zap, LayoutList,
   Lock, ArrowUp, ArrowDown, CheckSquare, Square
 } from 'lucide-react';
 import { useClub } from '../context/ClubContext';
@@ -1087,7 +1087,7 @@ function PlansList({
 
       {/* Main Split Grid: Table of Plans + Side Access Panel (Image 5) */}
       <div style={{ display: 'grid', gridTemplateColumns: selectedPlanForAccess ? '1.5fr 1fr' : '1fr', gap: '24px', alignItems: 'start' }}>
-        
+
         {/* Left: Table of Plans */}
         <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '16px', overflow: 'hidden' }}>
           <div className="table-toolbar" style={{ background: '#F8FAFC', borderBottom: '1px solid #E2E8F0', padding: '12px 16px', display: 'flex', justifyContent: 'space-between' }}>
@@ -1135,8 +1135,8 @@ function PlansList({
               ) : filteredPlans.map(p => {
                 const isSelected = selectedPlanForAccess?.id === p.id;
                 const isShared = (p.sharedWithUserIds?.length || 0) + (p.sharedWithGroupIds?.length || 0) > 0;
-                const accessText = isShared 
-                  ? `Shared (${(p.sharedWithUserIds?.length || 0) + (p.sharedWithGroupIds?.length || 0)})` 
+                const accessText = isShared
+                  ? `Shared (${(p.sharedWithUserIds?.length || 0) + (p.sharedWithGroupIds?.length || 0)})`
                   : '• Private';
 
                 return (
@@ -1153,7 +1153,7 @@ function PlansList({
                       {p.title}
                     </td>
                     <td style={{ padding: '12px 12px', fontSize: '12px', color: '#64748B' }}>
-                      {p.createdByName || 'Example Coach A'}
+                      {p.createdByName || 'Coach'}
                     </td>
                     <td style={{ padding: '12px 12px', fontSize: '12px', color: isShared ? '#0D9488' : '#64748B', fontWeight: isShared ? 700 : 500 }}>
                       {accessText}
@@ -1211,7 +1211,7 @@ function PlansList({
             <div style={{ marginBottom: '14px' }}>
               <span style={{ fontSize: '12px', color: '#64748B' }}>Owner: </span>
               <strong style={{ fontSize: '13px', color: '#0F172A' }}>
-                {selectedPlanForAccess.createdByName || 'Example Coach A'}
+                {selectedPlanForAccess.createdByName || 'Coach'}
               </strong>
             </div>
 
@@ -1220,25 +1220,29 @@ function PlansList({
                 Shared with
               </div>
               <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '8px' }}>
-                {(selectedPlanForAccess.sharedWithLabels || ['Example Coach D', 'U17 Coaching Group']).map((lbl, idx) => (
-                  <span
-                    key={idx}
-                    style={{
-                      background: '#F1F5F9',
-                      border: '1px solid #E2E8F0',
-                      borderRadius: '8px',
-                      padding: '4px 10px',
-                      fontSize: '12px',
-                      fontWeight: 600,
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '6px'
-                    }}
-                  >
-                    {lbl}
-                    <X size={12} style={{ cursor: 'pointer', color: '#64748B' }} onClick={() => alert('Removed share')} />
-                  </span>
-                ))}
+                {(selectedPlanForAccess.sharedWithLabels || []).length > 0 ? (
+                  (selectedPlanForAccess.sharedWithLabels || []).map((lbl, idx) => (
+                    <span
+                      key={idx}
+                      style={{
+                        background: '#F1F5F9',
+                        border: '1px solid #E2E8F0',
+                        borderRadius: '8px',
+                        padding: '4px 10px',
+                        fontSize: '12px',
+                        fontWeight: 600,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px'
+                      }}
+                    >
+                      {lbl}
+                      <X size={12} style={{ cursor: 'pointer', color: '#64748B' }} onClick={() => alert('Removed share')} />
+                    </span>
+                  ))
+                ) : (
+                  <span style={{ fontSize: '12px', color: '#64748B' }}>Private (Only accessible by you)</span>
+                )}
               </div>
 
               <button
