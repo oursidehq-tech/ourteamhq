@@ -42,10 +42,11 @@ export default function EventsPage() {
     if (!selectedClubId) return;
     try {
       const membersSnap = await getDocs(collection(db, 'clubs', selectedClubId, 'members'));
-      setMembers(membersSnap.docs.map(d => ({
-        id: d.id,
-        name: d.data().displayName || d.data().name || d.id
-      })));
+      setMembers(membersSnap.docs.map(d => {
+        const data = d.data();
+        const name = data.displayName || data.name || data.fullName || [data.firstName, data.lastName].filter(Boolean).join(' ') || data.email || d.id;
+        return { id: d.id, name };
+      }));
 
       const teamsSnap = await getDocs(collection(db, 'clubs', selectedClubId, 'teams'));
       setTeams(teamsSnap.docs.map(d => ({

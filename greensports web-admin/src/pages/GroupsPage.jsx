@@ -107,7 +107,11 @@ export default function GroupsPage() {
         item={viewingItem} 
         itemType="group" 
         selectedClubId={selectedClubId} 
-        onClose={() => setViewingItem(null)} 
+        onClose={() => setViewingItem(null)}
+        onItemUpdated={(updated) => {
+          setViewingItem(updated);
+          fetch();
+        }}
       />
     );
   }

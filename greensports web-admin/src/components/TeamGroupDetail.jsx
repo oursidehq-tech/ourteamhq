@@ -25,12 +25,25 @@ import MultiSelect from './MultiSelect';
 import { trainingService, DESIGN_TOKENS } from '../services/trainingService';
 import { useAuth } from '../context/AuthContext';
 
-export default function TeamGroupDetail({ item, itemType, selectedClubId, onClose }) {
+const STAFF_ROLES = [
+  { key: 'coach', role: 'Coach', nameField: 'coachName', idField: 'coachId' },
+  { key: 'assistantCoach', role: 'Assistant Coach', nameField: 'assistantCoachName', idField: 'assistantCoachId' },
+  { key: 'trainer', role: 'Trainer', nameField: 'trainerName', idField: 'trainerId' },
+  { key: 'firstAid', role: 'First Aid Officer', nameField: 'firstAidName', idField: 'firstAidId' },
+  { key: 'manager', role: 'Team Manager', nameField: 'managerName', idField: 'managerId' },
+];
+
+export default function TeamGroupDetail({ item, itemType, selectedClubId, onClose, onItemUpdated }) {
   const { user, profile } = useAuth();
+  const [currentItem, setCurrentItem] = useState(item);
   const [activeTab, setActiveTab] = useState(itemType === 'team' ? 'overview' : 'members');
   const [members, setMembers] = useState([]);
   const [allClubMembers, setAllClubMembers] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setCurrentItem(item);
+  }, [item]);
 
   // Tab Data States
   const [tabData, setTabData] = useState({
@@ -62,6 +75,13 @@ export default function TeamGroupDetail({ item, itemType, selectedClubId, onClos
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [selectedNewMembers, setSelectedNewMembers] = useState([]);
   const [savingMembers, setSavingMembers] = useState(false);
+
+  // Assign Team Staff Modal
+  const [staffModalOpen, setStaffModalOpen] = useState(false);
+  const [staffForm, setStaffForm] = useState({});
+  const [staffSearch, setStaffSearch] = useState('');
+  const [focusedStaffRole, setFocusedStaffRole] = useState(null);
+  const [savingStaff, setSavingStaff] = useState(false);
 
   // Entity Modal (Add or Edit)
   const [activeItemModal, setActiveItemModal] = useState(null);
@@ -107,9 +127,9 @@ export default function TeamGroupDetail({ item, itemType, selectedClubId, onClos
       
       const filtered = allMems.filter(m => {
         if (itemType === 'team') {
-          return m.teamIds?.includes(item.id);
+          return m.teamIds?.includes(currentItem.id) || currentItem.memberIds?.includes(m.id);
         } else {
-          return m.groupIds?.includes(item.id);
+          return m.groupIds?.includes(currentItem.id) || currentItem.memberIds?.includes(m.id);
         }
       });
       setMembers(filtered);
@@ -252,14 +272,12 @@ export default function TeamGroupDetail({ item, itemType, selectedClubId, onClos
 
   // Staff list for Admin Overview
   const adminStaffList = useMemo(() => {
-    return [
-      { role: 'Coach', name: item.coachName || null, status: item.coachName ? 'green' : 'unassigned' },
-      { role: 'Assistant Coach', name: item.assistantCoachName || null, status: item.assistantCoachName ? 'green' : 'unassigned' },
-      { role: 'Trainer', name: item.trainerName || null, status: item.trainerName ? 'green' : 'unassigned' },
-      { role: 'First Aid Officer', name: item.firstAidName || null, status: item.firstAidName ? 'green' : 'unassigned' },
-      { role: 'Team Manager', name: item.managerName || null, status: item.managerName ? 'green' : 'unassigned' },
-    ];
-  }, [item]);
+    return STAFF_ROLES.map((sr) => ({
+      ...sr,
+      name: currentItem?.[sr.nameField] || null,
+      status: currentItem?.[sr.nameField] ? 'green' : 'unassigned',
+    }));
+  }, [currentItem]);
 
   // Handle New Update Creation from side form (Image 1)
   const handlePublishUpdate = async (asDraft = false) => {
@@ -450,9 +468,85 @@ export default function TeamGroupDetail({ item, itemType, selectedClubId, onClos
     }
   };
 
+  const openStaffModal = (focusRole = null) => {
+    const initial = {};
+    STAFF_ROLES.forEach((sr) => {
+      const savedId = currentItem?.[sr.idField] || '';
+      const savedName = currentItem?.[sr.nameField] || '';
+      const matched = allClubMembers.find(m =>
+        (savedId && m.id === savedId) ||
+        (savedName && (m.displayName || m.name || '').trim().toLowerCase() === savedName.trim().toLowerCase())
+      );
+      initial[sr.key] = matched ? matched.id : '';
+    });
+    setStaffForm(initial);
+    setStaffSearch('');
+    setFocusedStaffRole(focusRole);
+    setStaffModalOpen(true);
+  };
+
+  const handleSaveStaff = async () => {
+    if (itemType !== 'team' || !currentItem?.id) return;
+    setSavingStaff(true);
+    try {
+      const { writeBatch } = await import('firebase/firestore');
+      const batch = writeBatch(db);
+      const teamRef = doc(db, 'clubs', selectedClubId, 'teams', currentItem.id);
+      const updates = { updatedAt: serverTimestamp() };
+      const localUpdates = {};
+      const nextStaffAssignments = { ...(currentItem.staffAssignments || {}) };
+      const assignedMemberIds = new Set();
+
+      STAFF_ROLES.forEach((sr) => {
+        const memberId = staffForm[sr.key] || '';
+        const memberObj = allClubMembers.find(m => m.id === memberId);
+        const memberName = memberObj
+          ? (memberObj.displayName || memberObj.name || memberObj.fullName || [memberObj.firstName, memberObj.lastName].filter(Boolean).join(' ') || memberObj.email || '')
+          : '';
+        const staffUid = memberObj ? (memberObj.uid || memberObj.userId || memberObj.id) : '';
+        updates[sr.idField] = staffUid || '';
+        updates[sr.nameField] = memberName || '';
+        localUpdates[sr.idField] = staffUid || '';
+        localUpdates[sr.nameField] = memberName || '';
+        nextStaffAssignments[sr.role] = staffUid ? [staffUid] : [];
+        if (memberId) assignedMemberIds.add(memberId);
+      });
+
+      updates.staffAssignments = nextStaffAssignments;
+      localUpdates.staffAssignments = nextStaffAssignments;
+
+      batch.update(teamRef, updates);
+
+      // Ensure assigned staff members also belong to the team in clubs/{clubId}/members
+      assignedMemberIds.forEach((memberId) => {
+        batch.update(doc(db, 'clubs', selectedClubId, 'members', memberId), {
+          teamIds: arrayUnion(currentItem.id),
+          updatedAt: serverTimestamp(),
+        });
+      });
+
+      await batch.commit();
+
+      const updatedItem = { ...currentItem, ...localUpdates };
+      setCurrentItem(updatedItem);
+      if (typeof onItemUpdated === 'function') {
+        onItemUpdated(updatedItem);
+      }
+      await fetchMembers();
+      setStaffModalOpen(false);
+    } catch (err) {
+      alert('Error saving team staff: ' + err.message);
+    } finally {
+      setSavingStaff(false);
+    }
+  };
+
   const unassignedMembers = allClubMembers
     .filter(m => !members.some(assigned => assigned.id === m.id))
-    .map(m => ({ id: m.id, name: m.displayName || m.name || m.email || 'Unnamed Member' }));
+    .map(m => ({
+      id: m.id,
+      name: m.displayName || m.name || m.fullName || [m.firstName, m.lastName].filter(Boolean).join(' ') || m.email || 'Unnamed Member'
+    }));
 
   return (
     <div className="team-group-detail" style={{ animation: 'fadeIn 0.3s ease', fontFamily: 'Arial, sans-serif' }}>
@@ -586,7 +680,7 @@ export default function TeamGroupDetail({ item, itemType, selectedClubId, onClos
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px' }}>
                     <span style={{ color: '#334155' }}>1 First aid officer not assigned</span>
                     <button
-                      onClick={() => setAddModalOpen(true)}
+                      onClick={() => openStaffModal('First Aid Officer')}
                       style={{ background: 'none', border: 'none', padding: 0, color: '#0284C7', fontWeight: 600, cursor: 'pointer', fontSize: '13px' }}
                     >
                       Assign staff
@@ -634,14 +728,21 @@ export default function TeamGroupDetail({ item, itemType, selectedClubId, onClos
                       </div>
                       <div style={{ textAlign: 'right', minWidth: '40px' }}>
                         {st.status === 'green' && (
-                          <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#10B981' }} />
+                          <button
+                            onClick={() => openStaffModal(st.role)}
+                            title="Change staff assignment"
+                            style={{ background: 'none', border: 'none', padding: 0, color: '#059669', fontWeight: 600, cursor: 'pointer', fontSize: '12px', display: 'inline-flex', alignItems: 'center', gap: '5px' }}
+                          >
+                            <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#10B981' }} />
+                            Edit
+                          </button>
                         )}
                         {st.status === 'amber' && (
                           <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#F59E0B' }} />
                         )}
                         {st.status === 'unassigned' && (
                           <button
-                            onClick={() => setAddModalOpen(true)}
+                            onClick={() => openStaffModal(st.role)}
                             style={{ background: 'none', border: 'none', padding: 0, color: '#0284C7', fontWeight: 600, cursor: 'pointer', fontSize: '13px' }}
                           >
                             Assign
@@ -832,18 +933,21 @@ export default function TeamGroupDetail({ item, itemType, selectedClubId, onClos
               {/* Left Column: Team staff appointments */}
               <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '16px', padding: '22px 24px', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
                 <h3 style={{ margin: '0 0 16px 0', fontSize: '15px', fontWeight: 800, color: '#0F172A' }}>
-                  Team staff appointments • {[item.coachName, item.assistantCoachName, item.trainerName, item.firstAidName, item.managerName].filter(Boolean).length} of 5 filled
+                  Team staff appointments • {STAFF_ROLES.filter(sr => currentItem?.[sr.nameField]).length} of 5 filled
                 </h3>
 
                 <table style={{ width: '100%', borderCollapse: 'collapse', margin: '0 0 16px 0' }}>
                   <tbody>
-                    {[
-                      { role: 'Coach', name: item.coachName || null, status: item.coachName ? 'Compliant' : 'Not assigned', color: item.coachName ? '#10B981' : '#94A3B8', isFilled: !!item.coachName },
-                      { role: 'Assistant Coach', name: item.assistantCoachName || null, status: item.assistantCoachName ? 'Compliant' : 'Not assigned', color: item.assistantCoachName ? '#10B981' : '#94A3B8', isFilled: !!item.assistantCoachName },
-                      { role: 'Trainer', name: item.trainerName || null, status: item.trainerName ? 'Compliant' : 'Not assigned', color: item.trainerName ? '#10B981' : '#94A3B8', isFilled: !!item.trainerName },
-                      { role: 'First Aid Officer', name: item.firstAidName || null, status: item.firstAidName ? 'Compliant' : 'Not assigned', color: item.firstAidName ? '#10B981' : '#94A3B8', isFilled: !!item.firstAidName },
-                      { role: 'Team Manager', name: item.managerName || null, status: item.managerName ? 'Compliant' : 'Not assigned', color: item.managerName ? '#10B981' : '#94A3B8', isFilled: !!item.managerName },
-                    ].map((st, idx) => (
+                    {STAFF_ROLES.map((sr, idx) => {
+                      const assignedName = currentItem?.[sr.nameField] || null;
+                      const st = {
+                        role: sr.role,
+                        name: assignedName,
+                        status: assignedName ? 'Compliant' : 'Not assigned',
+                        color: assignedName ? '#10B981' : '#94A3B8',
+                        isFilled: !!assignedName,
+                      };
+                      return (
                       <tr key={st.role} style={{ borderBottom: idx < 4 ? '1px solid #F1F5F9' : 'none' }}>
                         <td style={{ padding: '12px 0', fontWeight: 700, fontSize: '13px', color: '#0F172A', width: '30%' }}>
                           {st.role}
@@ -853,17 +957,26 @@ export default function TeamGroupDetail({ item, itemType, selectedClubId, onClos
                         </td>
                         <td style={{ padding: '12px 0', textAlign: 'right', width: '32%' }}>
                           {st.isFilled ? (
-                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: 600, color: st.color }}>
-                              {st.status === 'Compliant' ? (
-                                <CheckCircle2 size={15} color="#10B981" />
-                              ) : (
-                                <AlertTriangle size={15} color="#F59E0B" />
-                              )}
-                              {st.status}
-                            </span>
+                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '10px' }}>
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: 600, color: st.color }}>
+                                {st.status === 'Compliant' ? (
+                                  <CheckCircle2 size={15} color="#10B981" />
+                                ) : (
+                                  <AlertTriangle size={15} color="#F59E0B" />
+                                )}
+                                {st.status}
+                              </span>
+                              <button
+                                onClick={() => openStaffModal(st.role)}
+                                className="btn btn-outline"
+                                style={{ padding: '3px 10px', fontSize: '11px', height: 'auto', borderRadius: '6px' }}
+                              >
+                                Change
+                              </button>
+                            </div>
                           ) : (
                             <button
-                              onClick={() => setAddModalOpen(true)}
+                              onClick={() => openStaffModal(st.role)}
                               className="btn btn-outline"
                               style={{ padding: '4px 14px', fontSize: '12px', height: 'auto', borderRadius: '6px' }}
                             >
@@ -872,7 +985,7 @@ export default function TeamGroupDetail({ item, itemType, selectedClubId, onClos
                           )}
                         </td>
                       </tr>
-                    ))}
+                    );})}
                   </tbody>
                 </table>
 
@@ -934,7 +1047,7 @@ export default function TeamGroupDetail({ item, itemType, selectedClubId, onClos
                     Add member
                   </button>
                   <button
-                    onClick={() => setAddModalOpen(true)}
+                    onClick={() => openStaffModal()}
                     style={{
                       background: '#FFFFFF',
                       border: '1px solid #CBD5E1',
@@ -1663,6 +1776,83 @@ export default function TeamGroupDetail({ item, itemType, selectedClubId, onClos
         )}
       </Modal>
 
+      {/* ─── MODAL: ASSIGN TEAM STAFF ────────────────────────────────────────── */}
+      <Modal
+        open={staffModalOpen}
+        onClose={() => setStaffModalOpen(false)}
+        title={`Assign Team Staff — ${currentItem?.name || 'Team'}`}
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label style={{ fontSize: '12px', fontWeight: 700 }}>Filter Club Members</label>
+            <input
+              className="form-control"
+              placeholder="Search member by name or email..."
+              value={staffSearch}
+              onChange={(e) => setStaffSearch(e.target.value)}
+            />
+          </div>
+
+          {allClubMembers.length === 0 ? (
+            <p className="text-sm text-muted">No club members found in this club yet.</p>
+          ) : (
+            STAFF_ROLES.map((sr) => {
+              const q = staffSearch.trim().toLowerCase();
+              const filteredStaffOptions = allClubMembers.filter((m) => {
+                if (!q || staffForm[sr.key] === m.id) return true;
+                const label = `${m.displayName || m.name || ''} ${m.email || ''} ${m.role || ''}`.toLowerCase();
+                return label.includes(q);
+              });
+              const isFocused = focusedStaffRole === sr.role;
+              return (
+                <div
+                  key={sr.key}
+                  className="form-group"
+                  style={{
+                    marginBottom: 0,
+                    padding: isFocused ? '10px 12px' : 0,
+                    borderRadius: isFocused ? '10px' : 0,
+                    background: isFocused ? 'rgba(16, 185, 129, 0.06)' : 'transparent',
+                    border: isFocused ? '1px solid rgba(16, 185, 129, 0.35)' : 'none',
+                  }}
+                >
+                  <label style={{ fontSize: '12px', fontWeight: 700 }}>{sr.role}</label>
+                  <select
+                    className="form-control"
+                    value={staffForm[sr.key] || ''}
+                    onChange={(e) => setStaffForm(prev => ({ ...prev, [sr.key]: e.target.value }))}
+                  >
+                    <option value="">— Not assigned —</option>
+                    {filteredStaffOptions.map((m) => {
+                      const label = m.displayName || m.name || m.email || 'Unnamed Member';
+                      const roleTag = (Array.isArray(m.roles) && m.roles.length > 0 ? m.roles.join(', ') : m.role) || '';
+                      return (
+                        <option key={m.id} value={m.id}>
+                          {roleTag ? `${label} (${roleTag})` : label}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
+              );
+            })
+          )}
+
+          <div className="form-actions" style={{ marginTop: 8 }}>
+            <button className="btn btn-outline" onClick={() => setStaffModalOpen(false)} disabled={savingStaff}>
+              Cancel
+            </button>
+            <button
+              className="btn btn-primary"
+              onClick={handleSaveStaff}
+              disabled={savingStaff || allClubMembers.length === 0}
+            >
+              {savingStaff ? 'Saving...' : 'Save Staff Assignments'}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
       {/* ─── MODAL: ADD MEMBERS ──────────────────────────────────────────────── */}
       <Modal open={addModalOpen} onClose={() => { setAddModalOpen(false); setSelectedNewMembers([]); }} title={`Add Members to ${itemType === 'team' ? 'Team' : 'Group'}`}>
         <div className="form-group">
@@ -1674,7 +1864,10 @@ export default function TeamGroupDetail({ item, itemType, selectedClubId, onClos
             placeholder="Search and select members..."
           />
           {unassignedMembers.length === 0 && (
-            <p className="text-sm text-muted" style={{ marginTop: 8 }}>All club members are already assigned to this {itemType}.</p>
+            <p className="text-sm text-muted" style={{ marginTop: 8 }}>
+              All club members ({members.length}) are already assigned to this {itemType}.
+              {itemType === 'team' && ' Use "Assign staff" to appoint a Coach, Trainer, First Aid Officer, or Manager.'}
+            </p>
           )}
         </div>
         <div className="form-actions">

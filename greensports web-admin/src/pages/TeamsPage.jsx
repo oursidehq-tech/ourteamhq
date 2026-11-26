@@ -60,7 +60,7 @@ export default function TeamsPage() {
       name: team.name || '', 
       ageGroup: team.ageGroup || '', 
       description: team.description || '',
-      memberIds: members.filter(m => m.teamIds?.includes(team.id)).map(m => m.id)
+      memberIds: members.filter(m => m.teamIds?.includes(team.id) || team.memberIds?.includes(m.id)).map(m => m.id)
     }); 
     setModal(team); 
   };
@@ -205,7 +205,12 @@ export default function TeamsPage() {
         item={viewingItem} 
         itemType="team" 
         selectedClubId={selectedClubId} 
-        onClose={() => setViewingItem(null)} 
+        onClose={() => setViewingItem(null)}
+        onItemUpdated={(updated) => {
+          setViewingItem(updated);
+          fetch();
+          fetchMembers();
+        }}
       />
     );
   }
@@ -243,7 +248,7 @@ export default function TeamsPage() {
               <tr key={t.id}>
                 <td><strong>{t.name}</strong></td>
                 <td>{t.ageGroup || '—'}</td>
-                <td>{members.filter(m => m.teamIds?.includes(t.id)).length}</td>
+                <td>{members.filter(m => m.teamIds?.includes(t.id) || t.memberIds?.includes(m.id)).length}</td>
                 <td className="text-sm text-muted">{t.createdAt?.toDate?.().toLocaleDateString() || '—'}</td>
                 <td>
                   <div className="flex gap-sm">
@@ -265,7 +270,10 @@ export default function TeamsPage() {
         <div className="form-group">
           <label>Assign Members</label>
           <MultiSelect
-            options={members.map(m => ({ id: m.id, name: m.displayName || m.email || 'Unknown' }))}
+            options={members.map(m => ({
+              id: m.id,
+              name: m.displayName || m.name || m.fullName || [m.firstName, m.lastName].filter(Boolean).join(' ') || m.email || 'Unnamed Member'
+            }))}
             selectedValues={form.memberIds || []}
             onChange={vals => setForm({ ...form, memberIds: vals })}
             placeholder="Search and assign members..."

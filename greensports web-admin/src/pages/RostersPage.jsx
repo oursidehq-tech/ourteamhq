@@ -36,12 +36,16 @@ export default function RostersPage() {
     if (!selectedClubId) return;
     try {
       const membersSnap = await getDocs(collection(db, 'clubs', selectedClubId, 'members'));
-      setMembers(membersSnap.docs.map(d => ({
-        id: `user_${d.id}`,
-        rawId: d.id,
-        type: 'user',
-        name: `👤 ${d.data().displayName || d.data().name || d.id}`
-      })));
+      setMembers(membersSnap.docs.map(d => {
+        const data = d.data();
+        const name = data.displayName || data.name || data.fullName || [data.firstName, data.lastName].filter(Boolean).join(' ') || data.email || d.id;
+        return {
+          id: `user_${d.id}`,
+          rawId: d.id,
+          type: 'user',
+          name: `👤 ${name}`
+        };
+      }));
 
       const teamsSnap = await getDocs(collection(db, 'clubs', selectedClubId, 'teams'));
       setTeams(teamsSnap.docs.map(d => ({

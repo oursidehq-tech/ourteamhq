@@ -1,13 +1,13 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { 
-  collection, getDocs, doc, query, where, orderBy, updateDoc, serverTimestamp, arrayUnion 
+import {
+  collection, getDocs, doc, query, where, orderBy, updateDoc, serverTimestamp, arrayUnion
 } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { useClub } from '../context/ClubContext';
 import { useAuth } from '../context/AuthContext';
-import { 
-  UsersRound, Trophy, Shield, User, Mail, Calendar, Clock, 
-  MapPin, AlertTriangle, CheckCircle2, AlertCircle, XCircle, 
+import {
+  UsersRound, Trophy, Shield, User, Mail, Calendar, Clock,
+  MapPin, AlertTriangle, CheckCircle2, AlertCircle, XCircle,
   ChevronRight, ChevronDown, ArrowRight, Bell, Edit3, X, RotateCcw, ListChecks,
   FileText, Pin, Search, Lock
 } from 'lucide-react';
@@ -26,7 +26,7 @@ const STAFF_ROLES = [
 export default function UserTeams() {
   const { selectedClubId, selectedClub } = useClub();
   const { user, profile } = useAuth();
-  
+
   const [teams, setTeams] = useState([]);
   const [members, setMembers] = useState([]);
   const [trainingSessions, setTrainingSessions] = useState([]);
@@ -34,7 +34,7 @@ export default function UserTeams() {
   const [updates, setUpdates] = useState([]);
   const [duties, setDuties] = useState([]);
   const [complianceRecords, setComplianceRecords] = useState([]);
-  
+
   const [loading, setLoading] = useState(true);
   const [selectedTeamId, setSelectedTeamId] = useState(null);
   const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'matches' | 'duties' | 'updates' | 'squad'
@@ -48,13 +48,13 @@ export default function UserTeams() {
   const [updatesFilter, setUpdatesFilter] = useState('all'); // 'all' | 'unread'
   const [readUpdateIds, setReadUpdateIds] = useState(new Set());
   const [showAllSquad, setShowAllSquad] = useState(false);
-  
+
   // Modals state
   const [sessionDetailModal, setSessionDetailModal] = useState(null);
   const [cancelModalSession, setCancelModalSession] = useState(null);
   const [cancelReason, setCancelReason] = useState('');
   const [cancelling, setCancelling] = useState(false);
-  
+
   const [editLogisticsSession, setEditLogisticsSession] = useState(null);
   const [logisticsForm, setLogisticsForm] = useState({ scheduledAt: '', location: '', notes: '' });
   const [savingLogistics, setSavingLogistics] = useState(false);
@@ -70,11 +70,11 @@ export default function UserTeams() {
     setLoading(true);
     try {
       const [
-        teamsSnap, 
-        membersSnap, 
-        sessionsSnap, 
-        eventsSnap, 
-        postsSnap, 
+        teamsSnap,
+        membersSnap,
+        sessionsSnap,
+        eventsSnap,
+        postsSnap,
         tasksSnap,
         complianceData
       ] = await Promise.all([
@@ -109,10 +109,10 @@ export default function UserTeams() {
   const clubMemberRecord = useMemo(() => {
     if (!user) return null;
     const emailLower = user.email?.toLowerCase().trim();
-    return members.find(m => 
-      m.id === user.uid || 
-      m.uid === user.uid || 
-      m.userId === user.uid || 
+    return members.find(m =>
+      m.id === user.uid ||
+      m.uid === user.uid ||
+      m.userId === user.uid ||
       (m.email && m.email.toLowerCase().trim() === emailLower)
     );
   }, [members, user]);
@@ -120,8 +120,8 @@ export default function UserTeams() {
   // Authorised teams: only teams the user or their child is assigned to
   const myTeams = useMemo(() => {
     return teams.filter(t => {
-      const isMember = 
-        t.memberIds?.includes(user?.uid) || 
+      const isMember =
+        t.memberIds?.includes(user?.uid) ||
         (clubMemberRecord && (
           t.memberIds?.includes(clubMemberRecord.id) ||
           (clubMemberRecord.uid && t.memberIds?.includes(clubMemberRecord.uid)) ||
@@ -129,10 +129,10 @@ export default function UserTeams() {
           (clubMemberRecord.email && t.memberIds?.some(id => id?.toLowerCase().trim() === clubMemberRecord.email?.toLowerCase().trim()))
         ));
       const isAssigned = clubMemberRecord?.teamIds?.includes(t.id);
-      
+
       // Also check if user is a designated staff member on the team object
-      const isStaffOnTeam = 
-        t.coachId === user?.uid || 
+      const isStaffOnTeam =
+        t.coachId === user?.uid ||
         t.managerId === user?.uid ||
         t.assistantCoachId === user?.uid ||
         (t.staffAssignments && Object.values(t.staffAssignments).some(arr => Array.isArray(arr) && arr.includes(user?.uid)));
@@ -191,7 +191,7 @@ export default function UserTeams() {
     if (!selectedTeamId) return [];
     return members.filter(m => {
       const inTeamIds = m.teamIds?.includes(selectedTeamId);
-      const inTeamMemberIds = 
+      const inTeamMemberIds =
         activeTeam?.memberIds?.includes(m.id) ||
         (m.uid && activeTeam?.memberIds?.includes(m.uid)) ||
         (m.userId && activeTeam?.memberIds?.includes(m.userId)) ||
@@ -302,11 +302,11 @@ export default function UserTeams() {
   const teamMatches = useMemo(() => {
     if (!selectedTeamId || !activeTeam) return [];
     return events.filter(e => {
-      const matchTeam = 
-        e.teamId === selectedTeamId || 
+      const matchTeam =
+        e.teamId === selectedTeamId ||
         e.assignedGroupId === selectedTeamId ||
         (Array.isArray(e.assignedGroupIds) && e.assignedGroupIds.includes(selectedTeamId)) ||
-        e.homeTeamId === selectedTeamId || 
+        e.homeTeamId === selectedTeamId ||
         e.awayTeamId === selectedTeamId ||
         (e.title && e.title.toLowerCase().includes(activeTeam.name.toLowerCase()));
       const isMatch = e.type === 'match' || e.category === 'match' || e.category === 'fixture';
@@ -340,8 +340,8 @@ export default function UserTeams() {
     }));
 
     const eventItems = events
-      .filter(e => 
-        e.teamId === selectedTeamId || 
+      .filter(e =>
+        e.teamId === selectedTeamId ||
         e.assignedGroupId === selectedTeamId ||
         (Array.isArray(e.assignedGroupIds) && e.assignedGroupIds.includes(selectedTeamId)) ||
         e.homeTeamId === selectedTeamId ||
@@ -374,8 +374,8 @@ export default function UserTeams() {
     if (!selectedTeamId || !activeTeam) return [];
     return updates
       .filter(p => {
-        const matchesTeam = 
-          p.teamId === selectedTeamId || 
+        const matchesTeam =
+          p.teamId === selectedTeamId ||
           p.groupId === selectedTeamId ||
           p.assignedGroupId === selectedTeamId ||
           (Array.isArray(p.teamIds) && p.teamIds.includes(selectedTeamId)) ||
@@ -390,14 +390,14 @@ export default function UserTeams() {
   const myDuties = useMemo(() => {
     if (!user) return [];
     return duties.filter(d => {
-      const isAssigned = 
-        d.assignedTo === user.uid || 
-        d.assignedUserId === user.uid || 
+      const isAssigned =
+        d.assignedTo === user.uid ||
+        d.assignedUserId === user.uid ||
         d.ownerId === user.uid ||
         (clubMemberRecord && (d.assignedTo === clubMemberRecord.id || d.assignedMemberId === clubMemberRecord.id));
-      const forTeam = 
-        !d.teamId || 
-        d.teamId === selectedTeamId || 
+      const forTeam =
+        !d.teamId ||
+        d.teamId === selectedTeamId ||
         d.assignedTeamId === selectedTeamId;
       return isAssigned && forTeam;
     });
@@ -606,7 +606,7 @@ export default function UserTeams() {
 
   return (
     <div style={{ maxWidth: '1120px', margin: '0 auto', padding: '24px', fontFamily: 'Arial, sans-serif' }}>
-      
+
       {!selectedClubId ? (
         <div className="card text-center" style={{ padding: '60px 20px', border: '1px solid #E2E8F0', background: '#ffffff', borderRadius: '16px' }}>
           <Shield size={44} style={{ color: DESIGN_TOKENS.primaryTeal, marginBottom: '16px', opacity: 0.8 }} />
@@ -621,7 +621,7 @@ export default function UserTeams() {
         </div>
       ) : (
         <div style={{ display: 'flex', gap: '24px', alignItems: 'flex-start' }}>
-          
+
           {/* Left Column: SELECT TEAM (Image 6 Concept) */}
           <div style={{ width: '220px', flexShrink: 0 }}>
             <div style={{ fontSize: '11px', fontWeight: 800, color: '#64748B', letterSpacing: '0.05em', marginBottom: '12px', textTransform: 'uppercase' }}>
@@ -658,10 +658,10 @@ export default function UserTeams() {
 
           {/* Right Column: Selected Team Details & Workspace */}
           <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '20px' }}>
-            
+
             {/* Top Header Card matching Concept */}
             <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '16px', padding: '22px 24px 0 24px', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
-              
+
               {/* Title & Badges matching Image 1 & Image 6 */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '14px', flexWrap: 'wrap', gap: '10px' }}>
                 <div>
@@ -747,7 +747,7 @@ export default function UserTeams() {
             {/* ─── TAB 1: OVERVIEW (IMAGE 6 & 7 CONCEPT) ─────────────────────────── */}
             {activeTab === 'overview' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                
+
                 {/* 1. Team Staff Card (Horizontal strip across top) */}
                 <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '16px', padding: '22px 24px', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
                   <h3 style={{ margin: '0 0 4px 0', fontSize: '16px', fontWeight: 800, color: '#0F172A' }}>
@@ -822,7 +822,7 @@ export default function UserTeams() {
 
                 {/* 2. Row with Next Training Session & Next Match (Image 6) */}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px' }}>
-                  
+
                   {/* Next Training Session */}
                   <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '16px', padding: '22px 24px', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
                     <h4 style={{ margin: '0 0 10px 0', fontSize: '15px', fontWeight: 800, color: '#0F172A' }}>
@@ -908,7 +908,7 @@ export default function UserTeams() {
 
                 {/* 4. Upcoming Activities & Duties Quick Actions */}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px' }}>
-                  
+
                   {/* Next up & Attendance */}
                   <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '16px', padding: '20px 22px' }}>
                     <div style={{ fontSize: '12px', fontWeight: 800, color: '#64748B', textTransform: 'uppercase', marginBottom: '8px' }}>
@@ -1005,527 +1005,527 @@ export default function UserTeams() {
               </div>
             )}
 
-          {/* ─── TAB 2: MATCHES & EVENTS ─────────────────────────────────── */}
-          {activeTab === 'matches' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              {/* Filter Pills */}
-              <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '4px' }}>
-                {['All', 'Matches', 'Training', 'Events'].map(flt => {
-                  const isSelected = eventFilter === flt;
-                  return (
-                    <button
-                      key={flt}
-                      onClick={() => setEventFilter(flt)}
-                      style={{
-                        background: isSelected ? '#0F172A' : '#FFFFFF',
-                        color: isSelected ? '#FFFFFF' : '#475569',
-                        border: isSelected ? 'none' : '1px solid #E2E8F0',
-                        borderRadius: '999px',
-                        padding: '6px 18px',
-                        fontSize: '13px',
-                        fontWeight: isSelected ? 700 : 500,
-                        cursor: 'pointer',
-                        transition: 'all 0.15s ease'
-                      }}
-                    >
-                      {flt}
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* Activities Cards */}
-              {filteredActivities.length === 0 ? (
-                <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '16px', padding: '40px', textAlign: 'center', color: '#64748B' }}>
-                  No activities found for this filter.
-                </div>
-              ) : (
-                filteredActivities.map(item => (
-                  <div
-                    key={item.id}
-                    style={{
-                      background: '#FFFFFF',
-                      border: '1px solid #E2E8F0',
-                      borderRadius: '16px',
-                      padding: '20px 24px',
-                      boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '8px'
-                    }}
-                  >
-                    <div style={{ fontSize: '12px', color: '#64748B', fontWeight: 600 }}>
-                      {item.type || item.category || 'Match'}
-                    </div>
-
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '10px' }}>
-                      <h3 style={{ margin: 0, fontSize: '17px', fontWeight: 800, color: '#0F172A' }}>
-                        {item.title}
-                      </h3>
-                      {item.status === 'cancelled' && (
-                        <span style={{ fontSize: '11px', fontWeight: 800, background: '#FEE2E2', color: '#DC2626', padding: '3px 10px', borderRadius: '999px' }}>
-                          CANCELLED
-                        </span>
-                      )}
-                    </div>
-
-                    <div style={{ fontSize: '13px', color: '#475569', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                      <span>{item.dateTime || `${item.date || ''} • ${item.time || ''} • ${item.venue || 'Main Oval'}`}</span>
-                      {item.badge && (
-                        <span style={{ fontSize: '11px', fontWeight: 600, background: '#FEF3C7', color: '#92400E', border: '1px solid #FDE68A', padding: '2px 8px', borderRadius: '6px' }}>
-                          {item.badge}
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Action row with availability buttons and links */}
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '10px', flexWrap: 'wrap', gap: '12px' }}>
-                      <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                        {item.type === 'Match' && (
-                          <>
-                            <button
-                              onClick={() => setAvailabilityResponses(prev => ({ ...prev, [item.id]: 'available' }))}
-                              style={{
-                                background: availabilityResponses[item.id] === 'available' ? '#0D9488' : '#FFFFFF',
-                                color: availabilityResponses[item.id] === 'available' ? '#FFFFFF' : '#334155',
-                                border: availabilityResponses[item.id] === 'available' ? 'none' : '1px solid #CBD5E1',
-                                borderRadius: '8px',
-                                padding: '6px 14px',
-                                fontWeight: 700,
-                                fontSize: '12px',
-                                cursor: 'pointer'
-                              }}
-                            >
-                              + Available
-                            </button>
-                            <button
-                              onClick={() => setAvailabilityResponses(prev => ({ ...prev, [item.id]: 'unavailable' }))}
-                              style={{
-                                background: availabilityResponses[item.id] === 'unavailable' ? '#FEE2E2' : '#FFFFFF',
-                                color: availabilityResponses[item.id] === 'unavailable' ? '#DC2626' : '#475569',
-                                border: '1px solid #CBD5E1',
-                                borderRadius: '8px',
-                                padding: '6px 14px',
-                                fontWeight: 600,
-                                fontSize: '12px',
-                                cursor: 'pointer'
-                              }}
-                            >
-                              Can't attend
-                            </button>
-                            {item.responseNeeded && !availabilityResponses[item.id] && (
-                              <span style={{ fontSize: '12px', color: '#64748B', fontStyle: 'italic', marginLeft: '6px' }}>
-                                Response needed
-                              </span>
-                            )}
-                          </>
-                        )}
-                      </div>
-
-                      <div style={{ display: 'flex', gap: '12px', alignItems: 'center', fontSize: '12px' }}>
-                        <button
-                          onClick={() => {
-                            if (item.rawSession) {
-                              setSessionDetailModal(item.rawSession);
-                            } else {
-                              alert(`Activity details:\n${item.title}\nDate: ${item.dateTime || item.date}\nVenue: ${item.venue || 'Main Oval'}`);
-                            }
-                          }}
-                          style={{ background: 'none', border: 'none', padding: 0, color: '#0369A1', fontWeight: 600, cursor: 'pointer' }}
-                        >
-                          View details
-                        </button>
-                        {item.type === 'Match' && (
-                          <>
-                            <span style={{ color: '#CBD5E1' }}>•</span>
-                            <button
-                              onClick={() => alert(`Directions to ${item.venue || 'Main Oval'}: Easts Sports Ground, 120 Main Street.`)}
-                              style={{ background: 'none', border: 'none', padding: 0, color: '#0369A1', fontWeight: 600, cursor: 'pointer' }}
-                            >
-                              View directions
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          )}
-
-              {/* ─── TAB 3: MY DUTIES (IMAGE 5) ────────────────────────────────── */}
-              {activeTab === 'duties' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                  {/* Subtabs: Upcoming / Completed */}
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    <button
-                      onClick={() => setUserDutiesSubTab('upcoming')}
-                      style={{
-                        padding: '6px 16px',
-                        borderRadius: '8px',
-                        border: '1px solid #CBD5E1',
-                        background: userDutiesSubTab === 'upcoming' ? '#FFFFFF' : '#F8FAFC',
-                        color: userDutiesSubTab === 'upcoming' ? '#0F172A' : '#64748B',
-                        fontWeight: userDutiesSubTab === 'upcoming' ? 700 : 500,
-                        fontSize: '13px',
-                        cursor: 'pointer',
-                        boxShadow: userDutiesSubTab === 'upcoming' ? '0 1px 2px rgba(0,0,0,0.05)' : 'none'
-                      }}
-                    >
-                      Upcoming
-                    </button>
-                    <button
-                      onClick={() => setUserDutiesSubTab('completed')}
-                      style={{
-                        padding: '6px 16px',
-                        borderRadius: '8px',
-                        border: '1px solid #CBD5E1',
-                        background: userDutiesSubTab === 'completed' ? '#FFFFFF' : '#F8FAFC',
-                        color: userDutiesSubTab === 'completed' ? '#0F172A' : '#64748B',
-                        fontWeight: userDutiesSubTab === 'completed' ? 700 : 500,
-                        fontSize: '13px',
-                        cursor: 'pointer',
-                        boxShadow: userDutiesSubTab === 'completed' ? '0 1px 2px rgba(0,0,0,0.05)' : 'none'
-                      }}
-                    >
-                      Completed
-                    </button>
-                  </div>
-
-                  {userDutiesSubTab === 'upcoming' ? (
-                    <>
-                      {/* Card 1: My duties */}
-                      {myDuties.length > 0 ? (
-                        myDuties.map(d => (
-                          <div key={d.id} style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '16px', padding: '22px 24px', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
-                            <h3 style={{ margin: '0 0 12px 0', fontSize: '17px', fontWeight: 800, color: '#0F172A' }}>
-                              My duty
-                            </h3>
-                            <div style={{ fontSize: '15px', fontWeight: 700, color: '#0F172A', marginBottom: '6px' }}>
-                              {d.title || d.name}
-                            </div>
-                            <div style={{ fontSize: '13px', color: '#475569', marginBottom: '4px' }}>
-                              {d.date ? `${d.date} • ${d.time || ''} • ${d.location || ''}` : (d.time ? `${d.time} • ${d.location || ''}` : d.location || 'Venue scheduled')}
-                            </div>
-                            <div style={{ fontSize: '12px', color: '#64748B', marginBottom: '16px' }}>
-                              Role: {d.role || 'Volunteer'} • Assigned via {activeTeam?.name || 'Team'}
-                            </div>
-                            <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '10px' }}>
-                              <button
-                                onClick={() => setViewDutyModal(d)}
-                                style={{
-                                  background: '#0D9488',
-                                  color: '#FFFFFF',
-                                  border: 'none',
-                                  borderRadius: '8px',
-                                  padding: '8px 18px',
-                                  fontWeight: 700,
-                                  fontSize: '13px',
-                                  cursor: 'pointer'
-                                }}
-                              >
-                                View instructions
-                              </button>
-                              <button
-                                onClick={() => alert("Organiser has been notified of your inability to attend.")}
-                                style={{
-                                  background: '#FFFFFF',
-                                  color: '#334155',
-                                  border: '1px solid #CBD5E1',
-                                  borderRadius: '8px',
-                                  padding: '8px 18px',
-                                  fontWeight: 600,
-                                  fontSize: '13px',
-                                  cursor: 'pointer'
-                                }}
-                              >
-                                Can't attend
-                              </button>
-                            </div>
-                            <div style={{ fontSize: '11px', color: '#64748B' }}>
-                              Organiser will be notified of your request
-                            </div>
-                          </div>
-                        ))
-                      ) : (
-                        <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '16px', padding: '24px', textAlign: 'center', color: '#64748B' }}>
-                          <div style={{ fontWeight: 700, color: '#0F172A', marginBottom: '4px' }}>No duties scheduled</div>
-                          <div style={{ fontSize: '13px' }}>You have no rostered duties for this team at this time.</div>
-                        </div>
-                      )}
-                    </>
-                  ) : (
-                    /* Completed Subtab Content */
-                    <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '16px', padding: '22px 24px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                      {myDuties.filter(d => d.status === 'completed' || d.completed).length > 0 ? (
-                        myDuties.filter(d => d.status === 'completed' || d.completed).map(d => (
-                          <div
-                            key={d.id}
-                            style={{
-                              display: 'flex',
-                              justifyContent: 'space-between',
-                              alignItems: 'center',
-                              padding: '12px 0',
-                              borderBottom: '1px solid #F1F5F9'
-                            }}
-                          >
-                            <div>
-                              <div style={{ fontWeight: 700, fontSize: '13px', color: '#0F172A' }}>
-                                {d.title || d.name}
-                              </div>
-                              <div style={{ fontSize: '12px', color: '#64748B' }}>
-                                Completed • {d.date || 'Recent'}
-                              </div>
-                            </div>
-                            <CheckCircle2 size={18} color="#10B981" />
-                          </div>
-                        ))
-                      ) : (
-                        <div style={{ color: '#64748B', fontSize: '13px', textAlign: 'center', padding: '16px' }}>
-                          No completed duties or tasks yet.
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* ─── TAB 4: UPDATES (IMAGE 6) ─────────────────────────────────── */}
-              {activeTab === 'updates' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                  {/* Search and Filter Row */}
-                  <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
-                    <div style={{ position: 'relative', flex: '1', minWidth: '220px', maxWidth: '320px' }}>
-                      <Search size={15} color="#94A3B8" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
-                      <input
-                        type="text"
-                        placeholder="Search updates"
-                        value={updatesSearch}
-                        onChange={e => setUpdatesSearch(e.target.value)}
-                        style={{
-                          width: '100%',
-                          padding: '8px 12px 8px 34px',
-                          borderRadius: '8px',
-                          border: '1px solid #CBD5E1',
-                          fontSize: '13px',
-                          color: '#0F172A',
-                          outline: 'none',
-                          boxSizing: 'border-box'
-                        }}
-                      />
-                    </div>
-                    <div style={{ display: 'flex', gap: '8px' }}>
+            {/* ─── TAB 2: MATCHES & EVENTS ─────────────────────────────────── */}
+            {activeTab === 'matches' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                {/* Filter Pills */}
+                <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '4px' }}>
+                  {['All', 'Matches', 'Training', 'Events'].map(flt => {
+                    const isSelected = eventFilter === flt;
+                    return (
                       <button
-                        onClick={() => setUpdatesFilter('all')}
+                        key={flt}
+                        onClick={() => setEventFilter(flt)}
                         style={{
-                          padding: '6px 16px',
-                          borderRadius: '8px',
-                          background: updatesFilter === 'all' ? '#0D9488' : '#FFFFFF',
-                          color: updatesFilter === 'all' ? '#FFFFFF' : '#475569',
-                          border: updatesFilter === 'all' ? 'none' : '1px solid #CBD5E1',
-                          fontWeight: updatesFilter === 'all' ? 700 : 500,
+                          background: isSelected ? '#0F172A' : '#FFFFFF',
+                          color: isSelected ? '#FFFFFF' : '#475569',
+                          border: isSelected ? 'none' : '1px solid #E2E8F0',
+                          borderRadius: '999px',
+                          padding: '6px 18px',
                           fontSize: '13px',
-                          cursor: 'pointer'
+                          fontWeight: isSelected ? 700 : 500,
+                          cursor: 'pointer',
+                          transition: 'all 0.15s ease'
                         }}
                       >
-                        All
+                        {flt}
                       </button>
-                      <button
-                        onClick={() => setUpdatesFilter('unread')}
-                        style={{
-                          padding: '6px 16px',
-                          borderRadius: '8px',
-                          background: updatesFilter === 'unread' ? '#0D9488' : '#FFFFFF',
-                          color: updatesFilter === 'unread' ? '#FFFFFF' : '#475569',
-                          border: updatesFilter === 'unread' ? 'none' : '1px solid #CBD5E1',
-                          fontWeight: updatesFilter === 'unread' ? 700 : 500,
-                          fontSize: '13px',
-                          cursor: 'pointer'
-                        }}
-                      >
-                        Unread
-                      </button>
-                    </div>
-                  </div>
+                    );
+                  })}
+                </div>
 
-                  {/* Updates list */}
-                  {displayUpdatesList.map(u => (
+                {/* Activities Cards */}
+                {filteredActivities.length === 0 ? (
+                  <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '16px', padding: '40px', textAlign: 'center', color: '#64748B' }}>
+                    No activities found for this filter.
+                  </div>
+                ) : (
+                  filteredActivities.map(item => (
                     <div
-                      key={u.id}
+                      key={item.id}
                       style={{
                         background: '#FFFFFF',
                         border: '1px solid #E2E8F0',
                         borderRadius: '16px',
-                        padding: '22px 24px',
+                        padding: '20px 24px',
                         boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
                         display: 'flex',
                         flexDirection: 'column',
                         gap: '8px'
                       }}
                     >
-                      {u.pinned && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', fontWeight: 700, color: '#0F172A' }}>
-                          <span>◆</span> Pinned
-                        </div>
-                      )}
-                      
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                      <div style={{ fontSize: '12px', color: '#64748B', fontWeight: 600 }}>
+                        {item.type || item.category || 'Match'}
+                      </div>
+
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '10px' }}>
                         <h3 style={{ margin: 0, fontSize: '17px', fontWeight: 800, color: '#0F172A' }}>
-                          {u.title}
+                          {item.title}
                         </h3>
-                        {u.isNew && (
-                          <span style={{ fontSize: '11px', fontWeight: 700, background: '#0D9488', color: '#FFFFFF', padding: '2px 8px', borderRadius: '6px' }}>
-                            New
+                        {item.status === 'cancelled' && (
+                          <span style={{ fontSize: '11px', fontWeight: 800, background: '#FEE2E2', color: '#DC2626', padding: '3px 10px', borderRadius: '999px' }}>
+                            CANCELLED
                           </span>
                         )}
                       </div>
 
-                      <div style={{ fontSize: '12px', color: '#64748B' }}>
-                        {u.authorInfo}
+                      <div style={{ fontSize: '13px', color: '#475569', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                        <span>{item.dateTime || `${item.date || ''} • ${item.time || ''} • ${item.venue || 'Main Oval'}`}</span>
+                        {item.badge && (
+                          <span style={{ fontSize: '11px', fontWeight: 600, background: '#FEF3C7', color: '#92400E', border: '1px solid #FDE68A', padding: '2px 8px', borderRadius: '6px' }}>
+                            {item.badge}
+                          </span>
+                        )}
                       </div>
 
-                      <p style={{ margin: '6px 0 12px 0', fontSize: '13px', lineHeight: 1.5, color: '#334155' }}>
-                        {u.body}
-                      </p>
+                      {/* Action row with availability buttons and links */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '10px', flexWrap: 'wrap', gap: '12px' }}>
+                        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                          {item.type === 'Match' && (
+                            <>
+                              <button
+                                onClick={() => setAvailabilityResponses(prev => ({ ...prev, [item.id]: 'available' }))}
+                                style={{
+                                  background: availabilityResponses[item.id] === 'available' ? '#0D9488' : '#FFFFFF',
+                                  color: availabilityResponses[item.id] === 'available' ? '#FFFFFF' : '#334155',
+                                  border: availabilityResponses[item.id] === 'available' ? 'none' : '1px solid #CBD5E1',
+                                  borderRadius: '8px',
+                                  padding: '6px 14px',
+                                  fontWeight: 700,
+                                  fontSize: '12px',
+                                  cursor: 'pointer'
+                                }}
+                              >
+                                + Available
+                              </button>
+                              <button
+                                onClick={() => setAvailabilityResponses(prev => ({ ...prev, [item.id]: 'unavailable' }))}
+                                style={{
+                                  background: availabilityResponses[item.id] === 'unavailable' ? '#FEE2E2' : '#FFFFFF',
+                                  color: availabilityResponses[item.id] === 'unavailable' ? '#DC2626' : '#475569',
+                                  border: '1px solid #CBD5E1',
+                                  borderRadius: '8px',
+                                  padding: '6px 14px',
+                                  fontWeight: 600,
+                                  fontSize: '12px',
+                                  cursor: 'pointer'
+                                }}
+                              >
+                                Can't attend
+                              </button>
+                              {item.responseNeeded && !availabilityResponses[item.id] && (
+                                <span style={{ fontSize: '12px', color: '#64748B', fontStyle: 'italic', marginLeft: '6px' }}>
+                                  Response needed
+                                </span>
+                              )}
+                            </>
+                          )}
+                        </div>
 
-                      <div style={{ display: 'flex', gap: '14px', alignItems: 'center', fontSize: '12px' }}>
-                        {u.hasSessionLink && (
+                        <div style={{ display: 'flex', gap: '12px', alignItems: 'center', fontSize: '12px' }}>
                           <button
                             onClick={() => {
-                              if (nextSession) setSessionDetailModal(nextSession);
-                              else alert('Training session details:\nTuesday 5:30 pm at Main Oval.');
+                              if (item.rawSession) {
+                                setSessionDetailModal(item.rawSession);
+                              } else {
+                                alert(`Activity details:\n${item.title}\nDate: ${item.dateTime || item.date}\nVenue: ${item.venue || 'Main Oval'}`);
+                              }
                             }}
                             style={{ background: 'none', border: 'none', padding: 0, color: '#0369A1', fontWeight: 600, cursor: 'pointer' }}
                           >
-                            View session
+                            View details
                           </button>
-                        )}
-                        <button
-                          onClick={() => {
-                            setReadUpdateIds(prev => {
-                              const next = new Set(prev);
-                              if (next.has(u.id)) next.delete(u.id);
-                              else next.add(u.id);
-                              return next;
-                            });
-                          }}
-                          style={{ background: 'none', border: 'none', padding: 0, color: '#0369A1', fontWeight: 600, cursor: 'pointer' }}
-                        >
-                          {readUpdateIds.has(u.id) ? 'Mark as unread' : 'Mark as read'}
-                        </button>
+                          {item.type === 'Match' && (
+                            <>
+                              <span style={{ color: '#CBD5E1' }}>•</span>
+                              <button
+                                onClick={() => alert(`Directions to ${item.venue || 'Main Oval'}: Easts Sports Ground, 120 Main Street.`)}
+                                style={{ background: 'none', border: 'none', padding: 0, color: '#0369A1', fontWeight: 600, cursor: 'pointer' }}
+                              >
+                                View directions
+                              </button>
+                            </>
+                          )}
+                        </div>
                       </div>
                     </div>
-                  ))}
+                  ))
+                )}
+              </div>
+            )}
+
+            {/* ─── TAB 3: MY DUTIES (IMAGE 5) ────────────────────────────────── */}
+            {activeTab === 'duties' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                {/* Subtabs: Upcoming / Completed */}
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button
+                    onClick={() => setUserDutiesSubTab('upcoming')}
+                    style={{
+                      padding: '6px 16px',
+                      borderRadius: '8px',
+                      border: '1px solid #CBD5E1',
+                      background: userDutiesSubTab === 'upcoming' ? '#FFFFFF' : '#F8FAFC',
+                      color: userDutiesSubTab === 'upcoming' ? '#0F172A' : '#64748B',
+                      fontWeight: userDutiesSubTab === 'upcoming' ? 700 : 500,
+                      fontSize: '13px',
+                      cursor: 'pointer',
+                      boxShadow: userDutiesSubTab === 'upcoming' ? '0 1px 2px rgba(0,0,0,0.05)' : 'none'
+                    }}
+                  >
+                    Upcoming
+                  </button>
+                  <button
+                    onClick={() => setUserDutiesSubTab('completed')}
+                    style={{
+                      padding: '6px 16px',
+                      borderRadius: '8px',
+                      border: '1px solid #CBD5E1',
+                      background: userDutiesSubTab === 'completed' ? '#FFFFFF' : '#F8FAFC',
+                      color: userDutiesSubTab === 'completed' ? '#0F172A' : '#64748B',
+                      fontWeight: userDutiesSubTab === 'completed' ? 700 : 500,
+                      fontSize: '13px',
+                      cursor: 'pointer',
+                      boxShadow: userDutiesSubTab === 'completed' ? '0 1px 2px rgba(0,0,0,0.05)' : 'none'
+                    }}
+                  >
+                    Completed
+                  </button>
                 </div>
-              )}
 
-              {/* ─── TAB 5: SQUAD (IMAGE 7) ─────────────────────────────────── */}
-              {activeTab === 'squad' && (
-                <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: '20px', alignItems: 'start' }}>
-                  
-                  {/* Left Column: Squad list */}
-                  <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '16px', padding: '22px 24px', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
-                    <h3 style={{ margin: '0 0 18px 0', fontSize: '16px', fontWeight: 800, color: '#0F172A' }}>
-                      Squad • {allSquad16.length} {allSquad16.length === 1 ? 'player' : 'players'}
-                    </h3>
-
-                    {displaySquadPlayers.length > 0 ? (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginBottom: '18px' }}>
-                        {displaySquadPlayers.map((p, idx) => (
-                          <div
-                            key={p.id || idx}
-                            style={{
-                              display: 'flex',
-                              justifyContent: 'space-between',
-                              alignItems: 'center',
-                              paddingBottom: '12px',
-                              borderBottom: idx < displaySquadPlayers.length - 1 ? '1px solid #F1F5F9' : 'none'
-                            }}
-                          >
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                              <div style={{
-                                width: '34px',
-                                height: '34px',
-                                borderRadius: '50%',
-                                backgroundColor: '#E2E8F0',
-                                color: '#334155',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                fontWeight: 700,
-                                fontSize: '12px'
-                              }}>
-                                {p.initials || 'P'}
-                              </div>
-                              <div>
-                                <div style={{ fontWeight: 700, fontSize: '13px', color: '#0F172A' }}>
-                                  {p.name}
-                                </div>
-                                <div style={{ fontSize: '12px', color: '#64748B' }}>
-                                  Player
-                                </div>
-                              </div>
-                            </div>
-
-                            {p.isYourChild && (
-                              <span style={{ fontSize: '11px', fontWeight: 700, background: '#0D9488', color: '#FFFFFF', padding: '4px 10px', borderRadius: '6px' }}>
-                                Your child
-                              </span>
-                            )}
+                {userDutiesSubTab === 'upcoming' ? (
+                  <>
+                    {/* Card 1: My duties */}
+                    {myDuties.length > 0 ? (
+                      myDuties.map(d => (
+                        <div key={d.id} style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '16px', padding: '22px 24px', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
+                          <h3 style={{ margin: '0 0 12px 0', fontSize: '17px', fontWeight: 800, color: '#0F172A' }}>
+                            My duty
+                          </h3>
+                          <div style={{ fontSize: '15px', fontWeight: 700, color: '#0F172A', marginBottom: '6px' }}>
+                            {d.title || d.name}
                           </div>
-                        ))}
-                      </div>
+                          <div style={{ fontSize: '13px', color: '#475569', marginBottom: '4px' }}>
+                            {d.date ? `${d.date} • ${d.time || ''} • ${d.location || ''}` : (d.time ? `${d.time} • ${d.location || ''}` : d.location || 'Venue scheduled')}
+                          </div>
+                          <div style={{ fontSize: '12px', color: '#64748B', marginBottom: '16px' }}>
+                            Role: {d.role || 'Volunteer'} • Assigned via {activeTeam?.name || 'Team'}
+                          </div>
+                          <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '10px' }}>
+                            <button
+                              onClick={() => setViewDutyModal(d)}
+                              style={{
+                                background: '#0D9488',
+                                color: '#FFFFFF',
+                                border: 'none',
+                                borderRadius: '8px',
+                                padding: '8px 18px',
+                                fontWeight: 700,
+                                fontSize: '13px',
+                                cursor: 'pointer'
+                              }}
+                            >
+                              View instructions
+                            </button>
+                            <button
+                              onClick={() => alert("Organiser has been notified of your inability to attend.")}
+                              style={{
+                                background: '#FFFFFF',
+                                color: '#334155',
+                                border: '1px solid #CBD5E1',
+                                borderRadius: '8px',
+                                padding: '8px 18px',
+                                fontWeight: 600,
+                                fontSize: '13px',
+                                cursor: 'pointer'
+                              }}
+                            >
+                              Can't attend
+                            </button>
+                          </div>
+                          <div style={{ fontSize: '11px', color: '#64748B' }}>
+                            Organiser will be notified of your request
+                          </div>
+                        </div>
+                      ))
                     ) : (
-                      <div style={{ color: '#64748B', fontSize: '13px', padding: '16px 0', textAlign: 'center' }}>
-                        No players assigned to squad yet.
+                      <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '16px', padding: '24px', textAlign: 'center', color: '#64748B' }}>
+                        <div style={{ fontWeight: 700, color: '#0F172A', marginBottom: '4px' }}>No duties scheduled</div>
+                        <div style={{ fontSize: '13px' }}>You have no rostered duties for this team at this time.</div>
                       </div>
                     )}
-
-                    {allSquad16.length > 6 && (
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '12px', borderTop: '1px solid #F1F5F9' }}>
-                        <button
-                          onClick={() => setShowAllSquad(!showAllSquad)}
-                          style={{ background: 'none', border: 'none', padding: 0, color: '#0F172A', fontSize: '12px', fontWeight: 500, cursor: 'pointer' }}
+                  </>
+                ) : (
+                  /* Completed Subtab Content */
+                  <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '16px', padding: '22px 24px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    {myDuties.filter(d => d.status === 'completed' || d.completed).length > 0 ? (
+                      myDuties.filter(d => d.status === 'completed' || d.completed).map(d => (
+                        <div
+                          key={d.id}
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            padding: '12px 0',
+                            borderBottom: '1px solid #F1F5F9'
+                          }}
                         >
-                          {showAllSquad ? `Showing all ${allSquad16.length} • Show less` : `Showing 6 of ${allSquad16.length} • Show all`}
-                        </button>
+                          <div>
+                            <div style={{ fontWeight: 700, fontSize: '13px', color: '#0F172A' }}>
+                              {d.title || d.name}
+                            </div>
+                            <div style={{ fontSize: '12px', color: '#64748B' }}>
+                              Completed • {d.date || 'Recent'}
+                            </div>
+                          </div>
+                          <CheckCircle2 size={18} color="#10B981" />
+                        </div>
+                      ))
+                    ) : (
+                      <div style={{ color: '#64748B', fontSize: '13px', textAlign: 'center', padding: '16px' }}>
+                        No completed duties or tasks yet.
                       </div>
                     )}
-
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: '#64748B', marginTop: '12px' }}>
-                      <Lock size={12} color="#64748B" />
-                      <span>Contact details are kept private.</span>
-                    </div>
                   </div>
+                )}
+              </div>
+            )}
 
-                  {/* Right Column: Team staff contact card */}
-                  <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '16px', padding: '22px 24px', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
-                    <h3 style={{ margin: '0 0 14px 0', fontSize: '16px', fontWeight: 800, color: '#0F172A' }}>
-                      Team staff contact
-                    </h3>
-                    <div style={{ fontSize: '13px', color: '#0F172A', marginBottom: '18px' }}>
-                      Team Manager • <strong>{staffListDisplay.find(s => s.role === 'Team Manager')?.name || 'Not assigned'}</strong>
-                    </div>
-                    <button
-                      onClick={() => setContactManagerModal(true)}
+            {/* ─── TAB 4: UPDATES (IMAGE 6) ─────────────────────────────────── */}
+            {activeTab === 'updates' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                {/* Search and Filter Row */}
+                <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
+                  <div style={{ position: 'relative', flex: '1', minWidth: '220px', maxWidth: '320px' }}>
+                    <Search size={15} color="#94A3B8" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
+                    <input
+                      type="text"
+                      placeholder="Search updates"
+                      value={updatesSearch}
+                      onChange={e => setUpdatesSearch(e.target.value)}
                       style={{
-                        background: '#FFFFFF',
-                        border: '1px solid #CBD5E1',
+                        width: '100%',
+                        padding: '8px 12px 8px 34px',
                         borderRadius: '8px',
-                        padding: '8px 16px',
+                        border: '1px solid #CBD5E1',
                         fontSize: '13px',
-                        fontWeight: 600,
                         color: '#0F172A',
+                        outline: 'none',
+                        boxSizing: 'border-box'
+                      }}
+                    />
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button
+                      onClick={() => setUpdatesFilter('all')}
+                      style={{
+                        padding: '6px 16px',
+                        borderRadius: '8px',
+                        background: updatesFilter === 'all' ? '#0D9488' : '#FFFFFF',
+                        color: updatesFilter === 'all' ? '#FFFFFF' : '#475569',
+                        border: updatesFilter === 'all' ? 'none' : '1px solid #CBD5E1',
+                        fontWeight: updatesFilter === 'all' ? 700 : 500,
+                        fontSize: '13px',
                         cursor: 'pointer'
                       }}
                     >
-                      Contact team manager
+                      All
+                    </button>
+                    <button
+                      onClick={() => setUpdatesFilter('unread')}
+                      style={{
+                        padding: '6px 16px',
+                        borderRadius: '8px',
+                        background: updatesFilter === 'unread' ? '#0D9488' : '#FFFFFF',
+                        color: updatesFilter === 'unread' ? '#FFFFFF' : '#475569',
+                        border: updatesFilter === 'unread' ? 'none' : '1px solid #CBD5E1',
+                        fontWeight: updatesFilter === 'unread' ? 700 : 500,
+                        fontSize: '13px',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Unread
                     </button>
                   </div>
-
                 </div>
-              )}
+
+                {/* Updates list */}
+                {displayUpdatesList.map(u => (
+                  <div
+                    key={u.id}
+                    style={{
+                      background: '#FFFFFF',
+                      border: '1px solid #E2E8F0',
+                      borderRadius: '16px',
+                      padding: '22px 24px',
+                      boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '8px'
+                    }}
+                  >
+                    {u.pinned && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', fontWeight: 700, color: '#0F172A' }}>
+                        <span>◆</span> Pinned
+                      </div>
+                    )}
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                      <h3 style={{ margin: 0, fontSize: '17px', fontWeight: 800, color: '#0F172A' }}>
+                        {u.title}
+                      </h3>
+                      {u.isNew && (
+                        <span style={{ fontSize: '11px', fontWeight: 700, background: '#0D9488', color: '#FFFFFF', padding: '2px 8px', borderRadius: '6px' }}>
+                          New
+                        </span>
+                      )}
+                    </div>
+
+                    <div style={{ fontSize: '12px', color: '#64748B' }}>
+                      {u.authorInfo}
+                    </div>
+
+                    <p style={{ margin: '6px 0 12px 0', fontSize: '13px', lineHeight: 1.5, color: '#334155' }}>
+                      {u.body}
+                    </p>
+
+                    <div style={{ display: 'flex', gap: '14px', alignItems: 'center', fontSize: '12px' }}>
+                      {u.hasSessionLink && (
+                        <button
+                          onClick={() => {
+                            if (nextSession) setSessionDetailModal(nextSession);
+                            else alert('Training session details:\nTuesday 5:30 pm at Main Oval.');
+                          }}
+                          style={{ background: 'none', border: 'none', padding: 0, color: '#0369A1', fontWeight: 600, cursor: 'pointer' }}
+                        >
+                          View session
+                        </button>
+                      )}
+                      <button
+                        onClick={() => {
+                          setReadUpdateIds(prev => {
+                            const next = new Set(prev);
+                            if (next.has(u.id)) next.delete(u.id);
+                            else next.add(u.id);
+                            return next;
+                          });
+                        }}
+                        style={{ background: 'none', border: 'none', padding: 0, color: '#0369A1', fontWeight: 600, cursor: 'pointer' }}
+                      >
+                        {readUpdateIds.has(u.id) ? 'Mark as unread' : 'Mark as read'}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* ─── TAB 5: SQUAD (IMAGE 7) ─────────────────────────────────── */}
+            {activeTab === 'squad' && (
+              <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: '20px', alignItems: 'start' }}>
+
+                {/* Left Column: Squad list */}
+                <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '16px', padding: '22px 24px', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
+                  <h3 style={{ margin: '0 0 18px 0', fontSize: '16px', fontWeight: 800, color: '#0F172A' }}>
+                    Squad • {allSquad16.length} {allSquad16.length === 1 ? 'player' : 'players'}
+                  </h3>
+
+                  {displaySquadPlayers.length > 0 ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginBottom: '18px' }}>
+                      {displaySquadPlayers.map((p, idx) => (
+                        <div
+                          key={p.id || idx}
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            paddingBottom: '12px',
+                            borderBottom: idx < displaySquadPlayers.length - 1 ? '1px solid #F1F5F9' : 'none'
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                            <div style={{
+                              width: '34px',
+                              height: '34px',
+                              borderRadius: '50%',
+                              backgroundColor: '#E2E8F0',
+                              color: '#334155',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontWeight: 700,
+                              fontSize: '12px'
+                            }}>
+                              {p.initials || 'P'}
+                            </div>
+                            <div>
+                              <div style={{ fontWeight: 700, fontSize: '13px', color: '#0F172A' }}>
+                                {p.name}
+                              </div>
+                              <div style={{ fontSize: '12px', color: '#64748B' }}>
+                                Player
+                              </div>
+                            </div>
+                          </div>
+
+                          {p.isYourChild && (
+                            <span style={{ fontSize: '11px', fontWeight: 700, background: '#0D9488', color: '#FFFFFF', padding: '4px 10px', borderRadius: '6px' }}>
+                              Your child
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div style={{ color: '#64748B', fontSize: '13px', padding: '16px 0', textAlign: 'center' }}>
+                      No players assigned to squad yet.
+                    </div>
+                  )}
+
+                  {allSquad16.length > 6 && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '12px', borderTop: '1px solid #F1F5F9' }}>
+                      <button
+                        onClick={() => setShowAllSquad(!showAllSquad)}
+                        style={{ background: 'none', border: 'none', padding: 0, color: '#0F172A', fontSize: '12px', fontWeight: 500, cursor: 'pointer' }}
+                      >
+                        {showAllSquad ? `Showing all ${allSquad16.length} • Show less` : `Showing 6 of ${allSquad16.length} • Show all`}
+                      </button>
+                    </div>
+                  )}
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: '#64748B', marginTop: '12px' }}>
+                    <Lock size={12} color="#64748B" />
+                    <span>Contact details are kept private.</span>
+                  </div>
+                </div>
+
+                {/* Right Column: Team staff contact card */}
+                <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '16px', padding: '22px 24px', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
+                  <h3 style={{ margin: '0 0 14px 0', fontSize: '16px', fontWeight: 800, color: '#0F172A' }}>
+                    Team staff contact
+                  </h3>
+                  <div style={{ fontSize: '13px', color: '#0F172A', marginBottom: '18px' }}>
+                    Team Manager • <strong>{staffListDisplay.find(s => s.role === 'Team Manager')?.name || 'Not assigned'}</strong>
+                  </div>
+                  <button
+                    onClick={() => setContactManagerModal(true)}
+                    style={{
+                      background: '#FFFFFF',
+                      border: '1px solid #CBD5E1',
+                      borderRadius: '8px',
+                      padding: '8px 16px',
+                      fontSize: '13px',
+                      fontWeight: 600,
+                      color: '#0F172A',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Contact team manager
+                  </button>
+                </div>
+
+              </div>
+            )}
 
           </div>
         </div>
@@ -1634,9 +1634,9 @@ export default function UserTeams() {
               <button className="btn btn-outline" onClick={() => setCancelModalSession(null)} disabled={cancelling}>
                 Go Back
               </button>
-              <button 
-                className="btn btn-danger" 
-                onClick={handleCancelSessionSubmit} 
+              <button
+                className="btn btn-danger"
+                onClick={handleCancelSessionSubmit}
                 disabled={cancelling || !cancelReason.trim()}
                 style={{ background: '#DC2626', color: '#fff', border: 'none' }}
               >

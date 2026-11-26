@@ -36,10 +36,11 @@ export default function TasksPage() {
     try {
       // 1. Fetch Members
       const membersSnap = await getDocs(collection(db, 'clubs', selectedClubId, 'members'));
-      setMembers(membersSnap.docs.map(d => ({
-        id: d.id,
-        name: d.data().displayName || d.data().name || d.id
-      })));
+      setMembers(membersSnap.docs.map(d => {
+        const data = d.data();
+        const name = data.displayName || data.name || data.fullName || [data.firstName, data.lastName].filter(Boolean).join(' ') || data.email || d.id;
+        return { id: d.id, name };
+      }));
 
       // 2. Fetch Teams
       const teamsSnap = await getDocs(collection(db, 'clubs', selectedClubId, 'teams'));

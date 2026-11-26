@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { ChevronDown, Search, X, Check } from 'lucide-react';
 
 export default function MultiSelect({
@@ -6,16 +7,41 @@ export default function MultiSelect({
   selectedValues = [],
   onChange,
   placeholder = 'Select options...',
+  emptyMessage = 'No options found',
   labelKey = 'name',
   valueKey = 'id'
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState('');
+  const [dropdownStyle, setDropdownStyle] = useState(null);
   const containerRef = useRef(null);
+  const dropdownRef = useRef(null);
+
+  const updatePosition = () => {
+    if (!containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - rect.bottom - 12;
+    const spaceAbove = rect.top - 12;
+    const openUpward = spaceBelow < 220 && spaceAbove > spaceBelow;
+    const maxHeight = Math.min(300, Math.max(160, openUpward ? spaceAbove : spaceBelow));
+
+    setDropdownStyle({
+      position: 'fixed',
+      left: rect.left,
+      width: rect.width,
+      zIndex: 99999,
+      maxHeight: `${maxHeight}px`,
+      ...(openUpward
+        ? { bottom: window.innerHeight - rect.top + 6 }
+        : { top: rect.bottom + 6 })
+    });
+  };
 
   useEffect(() => {
     const handleClickOutside = (event) => {
-      if (containerRef.current && !containerRef.current.contains(event.target)) {
+      const inTrigger = containerRef.current && containerRef.current.contains(event.target);
+      const inDropdown = dropdownRef.current && dropdownRef.current.contains(event.target);
+      if (!inTrigger && !inDropdown) {
         setIsOpen(false);
       }
     };
@@ -23,7 +49,21 @@ export default function MultiSelect({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const handleToggle = () => setIsOpen(!isOpen);
+  useEffect(() => {
+    if (!isOpen) return;
+    updatePosition();
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+    return () => {
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+    };
+  }, [isOpen]);
+
+  const handleToggle = () => {
+    if (!isOpen) updatePosition();
+    setIsOpen(!isOpen);
+  };
 
   const handleSelect = (val) => {
     const isSelected = selectedValues.includes(val);
@@ -115,23 +155,21 @@ export default function MultiSelect({
         }} />
       </div>
 
-      {isOpen && (
-        <div style={{
-          position: 'absolute',
-          top: 'calc(100% + 6px)',
-          left: 0,
-          right: 0,
-          zIndex: 9999,
-          background: 'var(--surface, #fff)',
-          border: '1px solid var(--border, #E5E5EA)',
-          borderRadius: 'var(--radius-sm, 12px)',
-          boxShadow: 'var(--shadow-lg, 0 12px 24px rgba(0,0,0,0.08))',
-          padding: '10px',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '8px',
-          maxHeight: '300px'
-        }}>
+      {isOpen && dropdownStyle && createPortal(
+        <div
+          ref={dropdownRef}
+          style={{
+            ...dropdownStyle,
+            background: 'var(--surface, #fff)',
+            border: '1px solid var(--border, #E5E5EA)',
+            borderRadius: 'var(--radius-sm, 12px)',
+            boxShadow: 'var(--shadow-lg, 0 12px 24px rgba(0,0,0,0.14))',
+            padding: '10px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '8px'
+          }}
+        >
           {/* Search Box */}
           <div style={{
             display: 'flex',
@@ -198,7 +236,7 @@ export default function MultiSelect({
                 color: 'var(--text-lighter, #AEAEB2)',
                 fontSize: '13px'
               }}>
-                No options found
+                {emptyMessage}
               </div>
             ) : (
               displayOptions.map((opt, i) => {
@@ -263,7 +301,8 @@ export default function MultiSelect({
               })
             )}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
